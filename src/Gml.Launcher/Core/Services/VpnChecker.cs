@@ -38,27 +38,27 @@ public class VpnChecker : IVpnChecker
 
     public bool IsUseVpnTunnel()
     {
-        var interfaces = NetworkInterface.GetAllNetworkInterfaces();
+        // var interfaces = NetworkInterface.GetAllNetworkInterfaces();
 
-        foreach (var ni in interfaces.Where(c => c.OperationalStatus == OperationalStatus.Up))
-        {
-            if (ni.NetworkInterfaceType is (NetworkInterfaceType)53 or NetworkInterfaceType.Tunnel)
-            {
-                return true;
-            }
+        // foreach (var ni in interfaces.Where(c => c.OperationalStatus == OperationalStatus.Up))
+        // {
+        //     if (ni.NetworkInterfaceType is (NetworkInterfaceType)53 or NetworkInterfaceType.Tunnel)
+        //     {
+        //         return true;
+        //     }
 
-            if (VpnKeywords.Any(keyword =>
-                    ni.Description.Contains(keyword, StringComparison.InvariantCultureIgnoreCase) ||
-                    ni.Name.Contains(keyword, StringComparison.InvariantCultureIgnoreCase)))
-            {
-                return true;
-            }
+        //     if (VpnKeywords.Any(keyword =>
+        //             ni.Description.Contains(keyword, StringComparison.InvariantCultureIgnoreCase) ||
+        //             ni.Name.Contains(keyword, StringComparison.InvariantCultureIgnoreCase)))
+        //     {
+        //         return true;
+        //     }
 
-            if (ni is { NetworkInterfaceType: NetworkInterfaceType.Ppp })
-            {
-                return true;
-            }
-        }
+        //     if (ni is { NetworkInterfaceType: NetworkInterfaceType.Ppp })
+        //     {
+        //         return true;
+        //     }
+        // }
 
         return false;
     }

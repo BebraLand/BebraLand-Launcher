@@ -45,7 +45,7 @@
                         <components:GmlButton Classes="Icon Additional"
                                               Margin="0, 15, 0, 0"
                                               Command="{Binding OpenLinkCommand}"
-                                              CommandParameter="https://recloud.tech"
+                                              CommandParameter="http://78.31.184.77/"
                                               IconPath="/Assets/Images/profile.svg"
                                               Text="{x:Static lang:Resources.Cabinet}"
                                               HorizontalAlignment="Center" />
@@ -55,7 +55,7 @@
                                               Padding="15, 10, 10, 10"
 
                                               Command="{Binding OpenLinkCommand}"
-                                              CommandParameter="https://recloud.tech"
+                                              CommandParameter="http://78.31.184.77/profile"
                                               IconSize="20"
                                               IconPath="/Assets/Images/home.svg"
                                               Text="{x:Static lang:Resources.Cabinet}"

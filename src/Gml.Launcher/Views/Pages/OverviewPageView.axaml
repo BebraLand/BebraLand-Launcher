@@ -93,13 +93,13 @@
                       Grid.ColumnSpan="3"
                       ColumnDefinitions="Auto, *, Auto">
 
-                    <components:GmlButton Grid.Column="0"
+                    <!--<components:GmlButton Grid.Column="0"
                                           IconPath="/Assets/Images/document.svg"
                                           Command="{Binding OpenLinkCommand}"
                                           CommandParameter="https://vk.com/recloud.studio"
                                           IconSize="22"
                                           Classes="TextIcon Additional"
-                                          Text="{x:Static lang:Resources.ModsList}" />
+                                          Text="{x:Static lang:Resources.ModsList}" />-->
 
                     <StackPanel Grid.Column="2"
                                 Orientation="Horizontal"

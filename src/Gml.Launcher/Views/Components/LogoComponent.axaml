@@ -13,6 +13,7 @@
 
     <Style Selector="controls|LogoComponent.Icon">
         <!-- Set Defaults -->
+        <Setter Property="Size" Value="64" />
         <Setter Property="Template">
             <ControlTemplate>
                 <Svg Path="/Assets/Images/logo.svg"
@@ -24,18 +25,19 @@
 
     <Style Selector="controls|LogoComponent.TextLogo">
         <!-- Set Defaults -->
+        <Setter Property="Size" Value="64" />
         <Setter Property="Template">
             <ControlTemplate>
                 <StackPanel Orientation="Horizontal"
-                            Spacing="15">
-                    <Svg Path="/Assets/Images/logo.svg"
-                         Width="{TemplateBinding Size}"
-                         Height="{TemplateBinding Size}" />
+                            Spacing="1">
                     <TextBlock Text="BebraLand"
                                VerticalAlignment="Center"
                                FontSize="26"
                                FontWeight="Bold"
                                Foreground="{StaticResource HeadlineColor}" />
+                    <Svg Path="/Assets/Images/logo.svg"
+                         Width="{TemplateBinding Size}"
+                         Height="{TemplateBinding Size}" />
                 </StackPanel>
             </ControlTemplate>
         </Setter>

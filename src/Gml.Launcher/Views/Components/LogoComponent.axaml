@@ -29,7 +29,7 @@
         <Setter Property="Template">
             <ControlTemplate>
                 <StackPanel Orientation="Horizontal"
-                            Spacing="1">
+                            Spacing="4">
                     <TextBlock Text="BebraLand"
                                VerticalAlignment="Center"
                                FontSize="26"

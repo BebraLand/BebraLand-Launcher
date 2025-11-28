@@ -19,6 +19,9 @@
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**"/>
+    <AvaloniaResource Update="Assets\Resources\Resources.lt.resx">
+      <Generator>PublicResXFileCodeGenerator</Generator>
+    </AvaloniaResource>
   </ItemGroup>
 
   <ItemGroup>

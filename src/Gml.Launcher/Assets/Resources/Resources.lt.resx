@@ -1,0 +1,333 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!--
+    Microsoft ResX Schema
+
+    Version 2.0
+
+    The primary goals of this format is to allow a simple XML format
+    that is mostly human readable. The generation and parsing of the
+    various data types are done through the TypeConverter classes
+    associated with the data types.
+
+    Example:
+
+    ... ado.net/XML headers & schema ...
+    <resheader name="resmimetype">text/microsoft-resx</resheader>
+    <resheader name="version">2.0</resheader>
+    <resheader name="reader">System.Resources.ResXResourceReader, System.Windows.Forms, ...</resheader>
+    <resheader name="writer">System.Resources.ResXResourceWriter, System.Windows.Forms, ...</resheader>
+    <data name="Name1"><value>this is my long string</value><comment>this is a comment</comment></data>
+    <data name="Color1" type="System.Drawing.Color, System.Drawing">Blue</data>
+    <data name="Bitmap1" mimetype="application/x-microsoft.net.object.binary.base64">
+        <value>[base64 mime encoded serialized .NET Framework object]</value>
+    </data>
+    <data name="Icon1" type="System.Drawing.Icon, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
+        <value>[base64 mime encoded string representing a byte array form of the .NET Framework object]</value>
+        <comment>This is a comment</comment>
+    </data>
+
+    There are any number of "resheader" rows that contain simple
+    name/value pairs.
+
+    Each data row contains a name, and value. The row also contains a
+    type or mimetype. Type corresponds to a .NET class that support
+    text/value conversion through the TypeConverter architecture.
+    Classes that don't support this are serialized and stored with the
+    mimetype set.
+
+    The mimetype is used for serialized objects, and tells the
+    ResXResourceReader how to depersist the object. This is currently not
+    extensible. For a given mimetype the value must be set accordingly:
+
+    Note - application/x-microsoft.net.object.binary.base64 is the format
+    that the ResXResourceWriter will generate, however the reader can
+    read any of the formats listed below.
+
+    mimetype: application/x-microsoft.net.object.binary.base64
+    value   : The object must be serialized with
+            : System.Runtime.Serialization.Formatters.Binary.BinaryFormatter
+            : and then encoded with base64 encoding.
+
+    mimetype: application/x-microsoft.net.object.soap.base64
+    value   : The object must be serialized with
+            : System.Runtime.Serialization.Formatters.Soap.SoapFormatter
+            : and then encoded with base64 encoding.
+
+    mimetype: application/x-microsoft.net.object.bytearray.base64
+    value   : The object must be serialized into a byte array
+            : using a System.ComponentModel.TypeConverter
+            : and then encoded with base64 encoding.
+    -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="AuthButtonText" xml:space="preserve">
+    <value>Prisijungti</value>
+  </data>
+  <data name="Login" xml:space="preserve">
+    <value>Prisijungimas</value>
+  </data>
+  <data name="Password" xml:space="preserve">
+    <value>Slaptažodis</value>
+  </data>
+  <data name="Play" xml:space="preserve">
+    <value>Žaisti</value>
+  </data>
+  <data name="Settings" xml:space="preserve">
+    <value>Nustatymai</value>
+  </data>
+  <data name="ModsList" xml:space="preserve">
+    <value>Modifikacijų sąrašas</value>
+  </data>
+  <data name="Website" xml:space="preserve">
+    <value>Svetainė</value>
+  </data>
+  <data name="Error" xml:space="preserve">
+    <value>Klaida</value>
+  </data>
+  <data name="InvalidAuthData" xml:space="preserve">
+    <value>Autentifikacijos klaida</value>
+  </data>
+  <data name="LostConnection" xml:space="preserve">
+    <value>Prarastas ryšys su serveriu</value>
+  </data>
+  <data name="Reconnecting" xml:space="preserve">
+    <value>Jungiamasi iš naujo....</value>
+  </data>
+  <data name="Back" xml:space="preserve">
+    <value>ATGAL</value>
+  </data>
+  <data name="Cabinet" xml:space="preserve">
+    <value>Profilis</value>
+  </data>
+  <data name="ProfileNotConfigured" xml:space="preserve">
+    <value>Profilis nesukonfigūruotas</value>
+  </data>
+  <data name="SettingsRamTitle" xml:space="preserve">
+    <value>RAM nustatymai</value>
+  </data>
+  <data name="SettingsRamDescription" xml:space="preserve">
+    <value>Sukonfigūruokite naudojamos RAM atminties kiekį.</value>
+  </data>
+  <data name="DynamicValue" xml:space="preserve">
+    <value>Automatinis</value>
+  </data>
+  <data name="FullScreen" xml:space="preserve">
+    <value>Visas ekranas</value>
+  </data>
+  <data name="WindowSize" xml:space="preserve">
+    <value>Lango dydis</value>
+  </data>
+  <data name="UnitMb" xml:space="preserve">
+    <value>MB</value>
+  </data>
+  <data name="NotSetting" xml:space="preserve">
+    <value>Nepavyko gauti paleidimo nustatymų. Prašome pereiti į kliento nustatymus ir bandyti dar kartą.</value>
+  </data>
+  <data name="Updating" xml:space="preserve">
+    <value>Atnaujinama</value>
+  </data>
+  <data name="UpdatingDescription" xml:space="preserve">
+    <value>Gaunami atnaujinimai</value>
+  </data>
+  <data name="CheckingFileIntegrity" xml:space="preserve">
+    <value>Tikrinama failų vientisumas</value>
+  </data>
+  <data name="Launching" xml:space="preserve">
+    <value>Paleidžiama</value>
+  </data>
+  <data name="PreparingLaunch" xml:space="preserve">
+    <value>Ruošiamasi paleisti...</value>
+  </data>
+  <data name="Available" xml:space="preserve">
+    <value>Prieinamas</value>
+  </data>
+  <data name="DefaultDRpcText" xml:space="preserve">
+    <value>Naršo paleidimo programoje</value>
+  </data>
+  <data name="PlayDRpcText" xml:space="preserve">
+    <value>Žaidžia</value>
+  </data>
+  <data name="CheckUpdates" xml:space="preserve">
+    <value>Tikrinami atnaujinimai</value>
+  </data>
+  <data name="InstallingUpdates" xml:space="preserve">
+    <value>Diegiami atnaujinimai</value>
+  </data>
+  <data name="FailedOs" xml:space="preserve">
+    <value>Nepavyko nustatyti operacinės sistemos</value>
+  </data>
+  <data name="OnServers" xml:space="preserve">
+    <value>Serveriuose</value>
+  </data>
+  <data name="PlayersShort" xml:space="preserve">
+    <value>žaid.</value>
+  </data>
+  <data name="JavaNotFound" xml:space="preserve">
+    <value>Nepavyko aptikti įkeltos Java jūsų operacinei sistemai, prašome susisiekti su palaikymu arba projekto administratoriumi.</value>
+  </data>
+  <data name="InstallationDirectory" xml:space="preserve">
+    <value>Diegimo aplankas</value>
+  </data>
+  <data name="Edit" xml:space="preserve">
+    <value>Keisti</value>
+  </data>
+  <data name="Stay" xml:space="preserve">
+    <value>Palikti</value>
+  </data>
+  <data name="Files" xml:space="preserve">
+    <value>failai</value>
+  </data>
+  <data name="InvalidFolder" xml:space="preserve">
+    <value>Nepavyko pakeisti diegimo aplanko arba įvyko klaida keičiant aplanką.</value>
+  </data>
+  <data name="IsDiskFull" xml:space="preserve">
+    <value>Nepakanka vietos diske</value>
+  </data>
+  <data name="GameProfileError" xml:space="preserve">
+    <value>Klaida inicializuojant žaidimo profilį.</value>
+  </data>
+  <data name="InvalidSession" xml:space="preserve">
+    <value>Jūsų žaidimo sesija paleidimo programoje pasibaigė, prašome prisijungti iš naujo.</value>
+  </data>
+  <data name="VpnUse" xml:space="preserve">
+    <value>Naudojate VPN ryšį, kuris gali neigiamai paveikti ryšio kokybę ir žaidimo kliento atsisiuntimus. Prašome išjungti VPN paleidžiant programą.</value>
+  </data>
+  <data name="Information" xml:space="preserve">
+    <value>Informacija</value>
+  </data>
+  <data name="ModsListDescription" xml:space="preserve">
+    <value>Šiame puslapyje galite peržiūrėti modifikacijų sąrašą ir pasirinkti jus dominančias. Galite jas dinamiškai įjungti ar išjungti bet kuriuo metu.</value>
+  </data>
+  <data name="Success" xml:space="preserve">
+    <value>Sėkmingai</value>
+  </data>
+  <data name="ModEnabled" xml:space="preserve">
+    <value>Modifikacija sėkmingai įjungta</value>
+  </data>
+  <data name="ModDisabled" xml:space="preserve">
+    <value>Modifikacija sėkmingai išjungta</value>
+  </data>
+  <data name="ModsEmpty" xml:space="preserve">
+    <value>Šiam profiliui nėra pasirenkamų modifikacijų. Jei turite pasiūlymų, prašome pranešti administracijai.</value>
+  </data>
+  <data name="Empty" xml:space="preserve">
+    <value>Tuščia</value>
+  </data>
+  <data name="MinecraftExceptionStartException" xml:space="preserve">
+    <value>Žaidimo metu įvyko klaida. Administracija jau gavo jūsų klaidos informaciją.
+
+</value>
+  </data>
+  <data name="News" xml:space="preserve">
+    <value>Naujienos</value>
+  </data>
+  <data name="BackendChecking" xml:space="preserve">
+    <value>Tikrinamas serveris</value>
+  </data>
+  <data name="SentrySDKInit" xml:space="preserve">
+    <value>Inicializuojama Sentry SDK</value>
+  </data>
+  <data name="BackendCheckingLonger" xml:space="preserve">
+    <value>Vis dar tikrinamas serveris</value>
+  </data>
+  <data name="OfflineDescription" xml:space="preserve">
+    <value>Nėra prieigos prie serverio. Paleidimo programa veikia autonominiu režimu.
+Norėdami išeiti iš autonominio režimo, įsitikinkite, kad serveris yra pasiekiamas, tada paleiskite programą iš naujo.</value>
+  </data>
+  <data name="OfflineMode" xml:space="preserve">
+    <value>Autonominis režimas</value>
+  </data>
+  <data name="CheckBackendButton" xml:space="preserve">
+    <value>Tikrinti serverį</value>
+  </data>
+  <data name="CheckBackendMessage" xml:space="preserve">
+    <value>Tikrinamas serverio pasiekiamumas, prašome palaukti</value>
+  </data>
+  <data name="CheckBackendResultFailed" xml:space="preserve">
+    <value>Serveris šiuo metu nepasiekiamas. Bandykite vėliau</value>
+  </data>
+  <data name="CheckBackendResultSuccessful" xml:space="preserve">
+    <value>Serveris pasiekiamas. Turite paleisti programą iš naujo, kad išjungtumėte autonominį režimą</value>
+  </data>
+  <data name="CheckBackendTitle" xml:space="preserve">
+    <value>Tikrinamas serveris</value>
+  </data>
+  <data name="RestartButton" xml:space="preserve">
+    <value>Paleisti iš naujo</value>
+  </data>
+  <data name="NewsOffline" xml:space="preserve">
+    <value>Nepavyko įkelti naujienų</value>
+  </data>
+  <data name="NewsEmptyTitle" xml:space="preserve">
+    <value>Šiuo metu naujienų nėra</value>
+  </data>
+  <data name="NewsEmptyContent" xml:space="preserve">
+    <value>Čia tuščia</value>
+  </data>
+  <data name="BackendOffline" xml:space="preserve">
+    <value>Serveris neatsako</value>
+  </data>
+  <data name="TwoFactorTitle" xml:space="preserve">
+    <value>Dviejų veiksnių autentifikacija</value>
+  </data>
+  <data name="TwoFactorDescription" xml:space="preserve">
+    <value>Prašome įvesti patvirtinimo kodą iš savo autentifikavimo programos.</value>
+  </data>
+</root>

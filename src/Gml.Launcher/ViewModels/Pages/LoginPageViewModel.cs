@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using GamerVII.Notification.Avalonia;
 using Gml.Client;
+using Gml.Client.Interfaces;
 using Gml.Client.Models;
 using Gml.Launcher.Assets;
 using Gml.Launcher.Core.Exceptions;
@@ -102,7 +103,7 @@ public class LoginPageViewModel : PageViewModelBase
 
     private async void CheckAuth()
     {
-        var authUser = await _storageService.GetAsync<AuthUser>(StorageConstants.User);
+        var authUser = await _storageService.GetAsync<AuthLauncherUser>(StorageConstants.User);
 
         if (authUser is { IsAuth: true } && authUser.ExpiredDate > DateTime.Now)
         {

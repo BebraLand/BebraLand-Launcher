@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Gml.Client;
+using Gml.Client.Interfaces;
 using Gml.Launcher.Assets;
 using Gml.Launcher.Core.Exceptions;
 using Gml.Launcher.Core.Services;
@@ -36,7 +37,7 @@ public class BackendChecker: IBackendChecker
     {
         try
         {
-            return GmlClientManager.CheckApiAsync(ResourceKeysDictionary.Host);
+            return GmlClientManager.CheckApiAsync(_manager.HostUri.ToString());
         }
         catch (TaskCanceledException exception)
         {

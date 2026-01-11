@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Threading;
 using Gml.Client;
+using Gml.Client.Interfaces;
 using Gml.Client.Models;
 using Gml.Dto.Messages;
 using Gml.Dto.Mods;
@@ -18,6 +19,7 @@ using Gml.Launcher.Core;
 using Gml.Launcher.Core.Exceptions;
 using Gml.Launcher.Core.Services;
 using Gml.Launcher.ViewModels.Base;
+using GmlCore.Interfaces.User;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using Sentry;
@@ -28,7 +30,7 @@ namespace Gml.Launcher.ViewModels.Pages;
 public class ModsPageViewModel : PageViewModelBase
 {
     private readonly ProfileReadDto _profile;
-    private readonly IUser _user;
+    private readonly ILauncherUser _user;
     private readonly IGmlClientManager _gmlManager;
     private readonly ISystemService _systemService;
     private readonly string _modsDirectory;
@@ -40,12 +42,12 @@ public class ModsPageViewModel : PageViewModelBase
 
     public ModsPageViewModel(IScreen screen,
         ProfileReadDto profile,
-        IUser user,
+        ILauncherUser user,
         IGmlClientManager gmlManager,
         ISystemService systemService) : base(screen)
     {
         _profile = profile;
-        _modsDirectory = Path.Combine(gmlManager.InstallationDirectory, "clients", profile.Name, "mods");
+        _modsDirectory = Path.Combine(gmlManager.InstallationDirectory, "game data", profile.Name, "mods");
         _user = user;
         _gmlManager = gmlManager;
         _systemService = systemService;

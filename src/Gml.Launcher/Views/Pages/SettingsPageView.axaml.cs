@@ -84,7 +84,7 @@ public partial class SettingsPageView : ReactiveUserControl<SettingsPageViewMode
         try
         {
             if (!Directory.Exists(ViewModel!.InstallationFolder))
-                throw new DirectoryNotFoundException();
+                Directory.CreateDirectory(ViewModel!.InstallationFolder ?? throw new DirectoryNotFoundException());
 
             if (OperatingSystem.IsWindows())
             {

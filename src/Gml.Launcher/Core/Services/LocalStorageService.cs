@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Gml.Client;
+using Gml.Client.Interfaces;
 using Gml.Launcher.Core.Exceptions;
 using Splat;
 using SQLite;

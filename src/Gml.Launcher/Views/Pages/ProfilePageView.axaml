@@ -31,7 +31,7 @@
 
                 <components:ProfileUserControl Grid.Row="2"
                                                Grid.Column="0"
-                                               UserName="{Binding User.Name}"
+                                               UserName="{Binding LauncherUser.Name}"
                                                SkinUrl="{Binding TextureUrl, Converter={converters:NoiseStringAddConverter}}"
                                                VerticalAlignment="Top">
 

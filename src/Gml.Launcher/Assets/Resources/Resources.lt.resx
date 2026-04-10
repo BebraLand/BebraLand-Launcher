@@ -330,4 +330,13 @@ Norėdami išeiti iš autonominio režimo, įsitikinkite, kad serveris yra pasie
   <data name="TwoFactorDescription" xml:space="preserve">
     <value>Prašome įvesti patvirtinimo kodą iš savo autentifikavimo programos.</value>
   </data>
+  <data name="Reinstall" xml:space="preserve">
+    <value>Įdiegti iš naujo</value>
+  </data>
+  <data name="ProfileSuccessRemoved" xml:space="preserve">
+    <value>Profilis sėkmingai pašalintas</value>
+  </data>
+  <data name="Delete" xml:space="preserve">
+    <value>Ištrinti</value>
+  </data>
 </root>

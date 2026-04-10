@@ -45,7 +45,7 @@ public static class ResourceKeysDictionary
     public const string NewsOffline = "NewsOffline";
     public const string NewsEmptyTitle = "NewsEmptyTitle";
     public const string NewsEmptyContent = "NewsEmptyContent";
-    public const string Host = "http://78.31.184.77:5003";
+    public const string Host = "http://79.76.45.83:5003";
     public const string SecondaryHost = "{{HOST_SECONDARY}}";
     public const string FolderName = "BebraLand";
 }

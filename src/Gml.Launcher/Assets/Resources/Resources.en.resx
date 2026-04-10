@@ -157,7 +157,7 @@
     <value>Profile</value>
   </data>
   <data name="ProfileNotConfigured" xml:space="preserve">
-    <value>Profile not configured</value>
+    <value>The profile is not configured, or the texture service is not configured, the launch of the current client is not available.</value>
   </data>
   <data name="SettingsRamTitle" xml:space="preserve">
     <value>Settings RAM</value>
@@ -329,5 +329,14 @@ To exit offline mode, make sure that the server is available, and then restart t
   </data>
   <data name="TwoFactorDescription" xml:space="preserve">
     <value>Please enter the verification code from your authentication app.</value>
+  </data>
+  <data name="Reinstall" xml:space="preserve">
+    <value>Reinstall</value>
+  </data>
+  <data name="Delete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="ProfileSuccessRemoved" xml:space="preserve">
+    <value>Profile success removed</value>
   </data>
 </root>

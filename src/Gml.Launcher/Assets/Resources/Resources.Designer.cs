@@ -692,5 +692,29 @@ namespace Gml.Launcher.Assets.Resources {
                 return ResourceManager.GetString("TwoFactorDescription", resourceCulture);
             }
         }
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Window size.
+        /// </summary>
+        public static string Reinstall {
+            get {
+                return ResourceManager.GetString("Reinstall", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Window size.
+        /// </summary>
+        public static string Delete {
+            get {
+                return ResourceManager.GetString("Delete", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Window size.
+        /// </summary>
+        public static string ProfileSuccessRemoved {
+            get {
+                return ResourceManager.GetString("ProfileSuccessRemoved", resourceCulture);
+            }
+        }
     }
 }

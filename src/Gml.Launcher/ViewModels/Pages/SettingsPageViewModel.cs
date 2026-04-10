@@ -6,6 +6,7 @@ using System.Reactive;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using Gml.Client;
+using Gml.Client.Interfaces;
 using Gml.Launcher.Assets.Resources;
 using Gml.Launcher.Core.Services;
 using Gml.Launcher.Models;

@@ -2,8 +2,10 @@
 using System.Diagnostics;
 using System.Reactive.Concurrency;
 using Gml.Client;
+using Gml.Client.Interfaces;
 using Gml.Client.Models;
 using Gml.Launcher.Assets;
+using Gml.Launcher.Core;
 using Gml.Launcher.Core.Services;
 using Gml.Launcher.ViewModels.Base;
 using GmlCore.Interfaces;
@@ -17,28 +19,28 @@ public class ProfilePageViewModel : PageViewModelBase
 {
     private readonly IGmlClientManager _manager;
     [Reactive] public string TextureUrl { get; set; }
-    [Reactive] public IUser User { get; set; }
+    [Reactive] public ILauncherUser LauncherUser { get; set; }
     internal ProfilePageViewModel(
         IScreen screen,
-        IUser user,
+        ILauncherUser launcherUser,
         IGmlClientManager manager,
         ILocalizationService? localizationService = null) : base(screen,
         localizationService)
     {
-        User = user ?? throw new ArgumentNullException(nameof(user));
+        LauncherUser = launcherUser ?? throw new ArgumentNullException(nameof(launcherUser));
         _manager = manager;
 
         RxApp.TaskpoolScheduler.Schedule(LoadData);
     }
 
-    public new string Title => LocalizationService.GetString(ResourceKeysDictionary.MainPageTitle);
+    public new string Title => LocalizationService.GetString(SystemConstants.MainPageTitle);
 
     private async void LoadData()
     {
         try
         {
             Debug.WriteLine($"[{DateTime.Now:HH:mm:ss:fff}] Loading texture data...]");
-            var userTextureInfo = await _manager.GetTexturesByName(User.Name);
+            var userTextureInfo = await _manager.GetTexturesByName(LauncherUser.Name);
 
             if (userTextureInfo is null)
                 return;

@@ -20,6 +20,8 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using Gml.Client.Interfaces;
+using Gml.Launcher.Core;
 using IStorageService = Gml.Launcher.Core.Services.IStorageService;
 
 namespace Gml.Launcher.ViewModels;
@@ -61,7 +63,7 @@ public class SplashScreenViewModel : WindowViewModelBase
         _timer.Interval = TimeSpan.FromSeconds(15);
         _timer.Tick += OnTimerTick;
 
-        StatusText = _localizationService.GetString(ResourceKeysDictionary.PreparingLaunch);
+        StatusText = _localizationService.GetString(SystemConstants.PreparingLaunch);
     }
 
     [Reactive] public string StatusText { get; set; }
@@ -74,7 +76,7 @@ public class SplashScreenViewModel : WindowViewModelBase
     {
         if (sender != null && !_isBackendChecked)
         {
-            StatusText = _localizationService.GetString(ResourceKeysDictionary.BackendCheckingLonger);
+            StatusText = _localizationService.GetString(SystemConstants.BackendCheckingLonger);
         }
     }
 
@@ -87,34 +89,34 @@ public class SplashScreenViewModel : WindowViewModelBase
 
             await _systemService.LoadSystemData();
 
-            ChangeState(_localizationService.GetString(ResourceKeysDictionary.BackendChecking), true);
+            ChangeState(_localizationService.GetString(SystemConstants.BackendChecking), true);
             _isBackendChecked = false;
             _timer.Start();
             await _backendChecker.UpdateBackendStatus();
             _isBackendChecked = true;
             if (_backendChecker.IsOffline)
             {
-                ChangeState(_localizationService.GetString(ResourceKeysDictionary.BackendOffline), true);
+                ChangeState(_localizationService.GetString(SystemConstants.BackendOffline), true);
                 await Task.Delay(1000);
             }
 
             if (!_backendChecker.IsOffline)
             {
-                ChangeState(_localizationService.GetString(ResourceKeysDictionary.SentrySDKInit), true);
+                ChangeState(_localizationService.GetString(SystemConstants.SentrySDKInit), true);
                 await InitializeSentryAsync();
             }
 
             if (!_manager.SkipUpdate && !_backendChecker.IsOffline)
             {
-                ChangeState(_localizationService.GetString(ResourceKeysDictionary.CheckUpdates), true);
+                ChangeState(_localizationService.GetString(SystemConstants.CheckUpdates), true);
                 var versionInfo = await CheckActualVersion(osType, osArch);
 
                 if (!versionInfo.IsActuallVersion)
                 {
-                    ChangeState(_localizationService.GetString(ResourceKeysDictionary.InstallingUpdates), false);
+                    ChangeState(_localizationService.GetString(SystemConstants.InstallingUpdates), false);
 
                     var exePath = Process.GetCurrentProcess().MainModule?.FileName
-                                  ?? throw new Exception(ResourceKeysDictionary.FailedOs);
+                                  ?? throw new Exception(SystemConstants.FailedOs);
 
                     var process = _manager.ProgressChanged.Subscribe(
                         percentage => Progress = Convert.ToInt16(percentage));
@@ -127,7 +129,7 @@ public class SplashScreenViewModel : WindowViewModelBase
 
             if (!_backendChecker.IsOffline)
             {
-                var authUser = await _storageService.GetAsync<AuthUser>(StorageConstants.User);
+                var authUser = await _storageService.GetAsync<AuthLauncherUser>(StorageConstants.User);
 
                 IsAuth = authUser != null
                          && authUser.ExpiredDate > DateTime.Now
@@ -140,38 +142,38 @@ public class SplashScreenViewModel : WindowViewModelBase
         {
             SentrySdk.CaptureException(exception);
         }
-        ChangeState(_localizationService.GetString(ResourceKeysDictionary.Launching), true);
+        ChangeState(_localizationService.GetString(SystemConstants.Launching), true);
         await Task.Delay(500);
     }
 
-    private async Task<bool> ValidateToken(AuthUser user)
+    private async Task<bool> ValidateToken(AuthLauncherUser launcherUser)
     {
         var handler = new JwtSecurityTokenHandler();
 
-        if (!handler.CanReadToken(user.AccessToken))
+        if (!handler.CanReadToken(launcherUser.AccessToken))
             return false;
 
-        var jwtToken = handler.ReadJwtToken(user.AccessToken);
+        var jwtToken = handler.ReadJwtToken(launcherUser.AccessToken);
 
         var claims = jwtToken.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name);
 
-        if (claims?.Value == user.Name)
+        if (claims?.Value == launcherUser.Name)
             return true;
 
-        await _storageService.SetAsync<IUser?>(StorageConstants.User, null).ConfigureAwait(false);
+        await _storageService.SetAsync<ILauncherUser?>(StorageConstants.User, null).ConfigureAwait(false);
 
         return false;
     }
 
-    private async Task<bool> ValidateTokenWithApi(AuthUser user)
+    private async Task<bool> ValidateTokenWithApi(AuthLauncherUser launcherUser)
     {
-        var userData = await _manager.Auth(user.AccessToken)
+        var userData = await _manager.Auth(launcherUser.AccessToken)
             .ConfigureAwait(false);
 
         if (userData.User.IsAuth)
             return userData.User.IsAuth;
 
-        await _storageService.SetAsync<IUser?>(StorageConstants.User, null).ConfigureAwait(false);
+        await _storageService.SetAsync<ILauncherUser?>(StorageConstants.User, null).ConfigureAwait(false);
 
         return userData.User.IsAuth;
     }
@@ -199,7 +201,8 @@ public class SplashScreenViewModel : WindowViewModelBase
     private static async Task InitializeSentryAsync()
     {
         Debug.WriteLine($"[Gml][{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Start sentry initialization");
-        var sentryUrl = await GmlClientManager.GetSentryLinkAsync(ResourceKeysDictionary.Host);
+        var manager = Locator.Current.GetService<IGmlClientManager>() ?? throw new ServiceNotFoundException(typeof(IGmlClientManager));
+        var sentryUrl = await GmlClientManager.GetSentryLinkAsync(manager.HostUri.ToString());
 
         try
         {

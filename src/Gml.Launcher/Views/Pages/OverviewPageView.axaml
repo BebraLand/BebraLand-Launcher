@@ -24,7 +24,7 @@
 
         <Rectangle Grid.Column="0"
                    Grid.ColumnSpan="2"
-                   Opacity=".5"
+                   Opacity=".1"
                    Fill="{DynamicResource BackgroundOverlay}" />
 
         <!-- Content -->
@@ -72,6 +72,8 @@
                                        Grid.Row="2"
                                        Classes.Animated="{Binding ListViewModel.HasSelectedItem}"
                                        PlayCommand="{Binding PlayCommand}"
+                                       ReinstallCommand="{Binding ReinstallCommand}"
+                                       RemoveCommand="{Binding RemoveCommand}"
                                        SettingsCommand="{Binding GoSettingsCommand}"
                                        GoModsCommand="{Binding GoModsCommand}"
                                        IsVisible="{Binding ListViewModel.HasSelectedItem}"
@@ -93,30 +95,30 @@
                       Grid.ColumnSpan="3"
                       ColumnDefinitions="Auto, *, Auto">
 
-                    <components:GmlButton Grid.Column="0"
+                    <!--<components:GmlButton Grid.Column="0"
                                           IconPath="/Assets/Images/document.svg"
                                           Command="{Binding OpenLinkCommand}"
                                           CommandParameter="https://vk.com/recloud.studio"
                                           IconSize="22"
                                           Classes="TextIcon Additional"
-                                          Text="{x:Static lang:Resources.ModsList}" />
+                                          Text="{x:Static lang:Resources.ModsList}" />-->
 
                     <StackPanel Grid.Column="2"
                                 Orientation="Horizontal"
                                 Spacing="10">
 
-                        <components:GmlButton IconPath="/Assets/Images/vk.svg"
+                        <!--<components:GmlButton IconPath="/Assets/Images/vk.svg"
                                               IconSize="24"
                                               Padding="0, 2, 0, 0"
                                               Command="{Binding OpenLinkCommand}"
                                               CommandParameter="https://vk.com/recloud.studio"
                                               Classes="Icon Additional"
-                                              Text="{x:Static lang:Resources.Website}" />
+                                              Text="{x:Static lang:Resources.Website}" />-->
 
                         <components:GmlButton IconPath="/Assets/Images/app.svg"
                                               IconSize="22"
                                               Command="{Binding OpenLinkCommand}"
-                                              CommandParameter="https://recloud.tech"
+                                              CommandParameter="http://78.31.184.77/"
                                               Padding="15, 0, 15, 0"
                                               Classes="TextIcon Additional"
                                               Text="{x:Static lang:Resources.Website}" />

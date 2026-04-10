@@ -157,7 +157,7 @@
     <value>个人账户</value>
   </data>
   <data name="ProfileNotConfigured" xml:space="preserve">
-    <value>配置未设置，当前客户端无法启动</value>
+    <value>配置文件未配置，或者纹理服务未配置，则当前客户端的启动不可用。</value>
   </data>
   <data name="SettingsRamTitle" xml:space="preserve">
     <value>RAM设置</value>
@@ -335,5 +335,14 @@
   </data>
   <data name="TwoFactorDescription" xml:space="preserve">
     <value>请输入您身份验证应用中的验证码。</value>
+  </data>
+  <data name="Reinstall" xml:space="preserve">
+    <value>重新安装</value>
+  </data>
+  <data name="Delete" xml:space="preserve">
+    <value>移走</value>
+  </data>
+  <data name="ProfileSuccessRemoved" xml:space="preserve">
+    <value>配置文件成功删除</value>
   </data>
 </root>

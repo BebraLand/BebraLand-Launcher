@@ -118,225 +118,225 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="AuthButtonText" xml:space="preserve">
-    <value>Sign in</value>
+    <value>Prisijungti</value>
   </data>
   <data name="Login" xml:space="preserve">
-    <value>Login</value>
+    <value>Prisijungimas</value>
   </data>
   <data name="Password" xml:space="preserve">
-    <value>Password</value>
+    <value>Slaptažodis</value>
   </data>
   <data name="Play" xml:space="preserve">
-    <value>Play</value>
+    <value>Žaisti</value>
   </data>
   <data name="Settings" xml:space="preserve">
-    <value>Settings</value>
+    <value>Nustatymai</value>
   </data>
   <data name="ModsList" xml:space="preserve">
-    <value>Mods list</value>
+    <value>Modifikacijų sąrašas</value>
   </data>
   <data name="Website" xml:space="preserve">
-    <value>Website</value>
+    <value>Svetainė</value>
   </data>
   <data name="Error" xml:space="preserve">
-    <value>Error</value>
+    <value>Klaida</value>
   </data>
   <data name="InvalidAuthData" xml:space="preserve">
-    <value>Auth error</value>
+    <value>Autentifikacijos klaida</value>
   </data>
   <data name="LostConnection" xml:space="preserve">
-    <value>Lost connection to server</value>
+    <value>Prarastas ryšys su serveriu</value>
   </data>
   <data name="Reconnecting" xml:space="preserve">
-    <value>Reconnecting....</value>
+    <value>Jungiamasi iš naujo....</value>
   </data>
   <data name="Back" xml:space="preserve">
-    <value>BACK</value>
+    <value>ATGAL</value>
   </data>
   <data name="Cabinet" xml:space="preserve">
-    <value>Profile</value>
+    <value>Profilis</value>
   </data>
   <data name="ProfileNotConfigured" xml:space="preserve">
-    <value>Profile not configured</value>
+    <value>Profilis nesukonfigūruotas</value>
   </data>
   <data name="SettingsRamTitle" xml:space="preserve">
-    <value>Settings RAM</value>
+    <value>RAM nustatymai</value>
   </data>
   <data name="SettingsRamDescription" xml:space="preserve">
-    <value>Configure the amount of RAM consumed.</value>
+    <value>Sukonfigūruokite naudojamos RAM atminties kiekį.</value>
   </data>
   <data name="DynamicValue" xml:space="preserve">
-    <value>Auto</value>
+    <value>Automatinis</value>
   </data>
   <data name="FullScreen" xml:space="preserve">
-    <value>Full screen</value>
+    <value>Visas ekranas</value>
   </data>
   <data name="WindowSize" xml:space="preserve">
-    <value>Window size</value>
+    <value>Lango dydis</value>
   </data>
   <data name="UnitMb" xml:space="preserve">
     <value>MB</value>
   </data>
   <data name="NotSetting" xml:space="preserve">
-    <value>Failed to get launch settings. Please go to the client settings and try again.</value>
+    <value>Nepavyko gauti paleidimo nustatymų. Prašome pereiti į kliento nustatymus ir bandyti dar kartą.</value>
   </data>
   <data name="Updating" xml:space="preserve">
-    <value>Updating</value>
+    <value>Atnaujinama</value>
   </data>
   <data name="UpdatingDescription" xml:space="preserve">
-    <value>Retrieving updates</value>
+    <value>Gaunami atnaujinimai</value>
   </data>
   <data name="CheckingFileIntegrity" xml:space="preserve">
-    <value>Checking file integrity</value>
+    <value>Tikrinama failų vientisumas</value>
   </data>
   <data name="Launching" xml:space="preserve">
-    <value>Launching</value>
+    <value>Paleidžiama</value>
   </data>
   <data name="PreparingLaunch" xml:space="preserve">
-    <value>Preparing to launch...</value>
+    <value>Ruošiamasi paleisti...</value>
   </data>
   <data name="Available" xml:space="preserve">
-    <value>Available</value>
+    <value>Prieinamas</value>
   </data>
   <data name="DefaultDRpcText" xml:space="preserve">
-    <value>Sits in the launcher</value>
+    <value>Naršo paleidimo programoje</value>
   </data>
   <data name="PlayDRpcText" xml:space="preserve">
-    <value>Play in</value>
+    <value>Žaidžia</value>
   </data>
   <data name="CheckUpdates" xml:space="preserve">
-    <value>Checking for updates</value>
+    <value>Tikrinami atnaujinimai</value>
   </data>
   <data name="InstallingUpdates" xml:space="preserve">
-    <value>Installing updates</value>
+    <value>Diegiami atnaujinimai</value>
   </data>
   <data name="FailedOs" xml:space="preserve">
-    <value>Failed to determine the operating system</value>
+    <value>Nepavyko nustatyti operacinės sistemos</value>
   </data>
   <data name="OnServers" xml:space="preserve">
-    <value>On servers</value>
+    <value>Serveriuose</value>
   </data>
   <data name="PlayersShort" xml:space="preserve">
-    <value>pl.</value>
+    <value>žaid.</value>
   </data>
   <data name="JavaNotFound" xml:space="preserve">
-    <value>Unable to detect a loaded Java for your operating system, please contact support or the project administrator.</value>
+    <value>Nepavyko aptikti įkeltos Java jūsų operacinei sistemai, prašome susisiekti su palaikymu arba projekto administratoriumi.</value>
   </data>
   <data name="InstallationDirectory" xml:space="preserve">
-    <value>Install folder</value>
+    <value>Diegimo aplankas</value>
   </data>
   <data name="Edit" xml:space="preserve">
-    <value>Change</value>
+    <value>Keisti</value>
   </data>
   <data name="Stay" xml:space="preserve">
-    <value>Stay</value>
+    <value>Palikti</value>
   </data>
   <data name="Files" xml:space="preserve">
-    <value>files</value>
+    <value>failai</value>
   </data>
   <data name="InvalidFolder" xml:space="preserve">
-    <value>Failed to change the installation folder or an error occurred while changing the folder.</value>
+    <value>Nepavyko pakeisti diegimo aplanko arba įvyko klaida keičiant aplanką.</value>
   </data>
   <data name="IsDiskFull" xml:space="preserve">
-    <value>Not enough disk space</value>
+    <value>Nepakanka vietos diske</value>
   </data>
   <data name="GameProfileError" xml:space="preserve">
-    <value>Error initializing the game profile.</value>
+    <value>Klaida inicializuojant žaidimo profilį.</value>
   </data>
   <data name="InvalidSession" xml:space="preserve">
-    <value>Your game session in the launcher has expired, please log in again.</value>
+    <value>Jūsų žaidimo sesija paleidimo programoje pasibaigė, prašome prisijungti iš naujo.</value>
   </data>
   <data name="VpnUse" xml:space="preserve">
-    <value>You are using a VPN connection, which may negatively affect connection quality and game client downloads. Please disable the VPN while running the launcher.</value>
+    <value>Naudojate VPN ryšį, kuris gali neigiamai paveikti ryšio kokybę ir žaidimo kliento atsisiuntimus. Prašome išjungti VPN paleidžiant programą.</value>
   </data>
   <data name="Information" xml:space="preserve">
-    <value>Information</value>
+    <value>Informacija</value>
   </data>
   <data name="ModsListDescription" xml:space="preserve">
-    <value>On this page, you can view the list of modifications and select the ones you are interested in. You can dynamically enable or disable them at any time.</value>
+    <value>Šiame puslapyje galite peržiūrėti modifikacijų sąrašą ir pasirinkti jus dominančias. Galite jas dinamiškai įjungti ar išjungti bet kuriuo metu.</value>
   </data>
   <data name="Success" xml:space="preserve">
-    <value>Success</value>
+    <value>Sėkmingai</value>
   </data>
   <data name="ModEnabled" xml:space="preserve">
-    <value>The mod has been successfully enabled</value>
+    <value>Modifikacija sėkmingai įjungta</value>
   </data>
   <data name="ModDisabled" xml:space="preserve">
-    <value>The mod has been successfully disabled</value>
+    <value>Modifikacija sėkmingai išjungta</value>
   </data>
   <data name="ModsEmpty" xml:space="preserve">
-    <value>There are no optional mods available for this profile. If you have any suggestions, please notify the administration.</value>
+    <value>Šiam profiliui nėra pasirenkamų modifikacijų. Jei turite pasiūlymų, prašome pranešti administracijai.</value>
   </data>
   <data name="Empty" xml:space="preserve">
-    <value>Empty</value>
+    <value>Tuščia</value>
   </data>
   <data name="MinecraftExceptionStartException" xml:space="preserve">
-    <value>An error occurred during the game. The administration has already received the details of your error.
+    <value>Žaidimo metu įvyko klaida. Administracija jau gavo jūsų klaidos informaciją.
 
 </value>
   </data>
   <data name="News" xml:space="preserve">
-    <value>News</value>
+    <value>Naujienos</value>
   </data>
   <data name="BackendChecking" xml:space="preserve">
-    <value>Checking the server</value>
+    <value>Tikrinamas serveris</value>
   </data>
   <data name="SentrySDKInit" xml:space="preserve">
-    <value>Initializing Sentry SDK</value>
+    <value>Inicializuojama Sentry SDK</value>
   </data>
   <data name="BackendCheckingLonger" xml:space="preserve">
-    <value>Still checking the server</value>
+    <value>Vis dar tikrinamas serveris</value>
   </data>
   <data name="OfflineDescription" xml:space="preserve">
-    <value>There is no access to the server. The launcher works offline.
-To exit offline mode, make sure that the server is available, and then restart the launcher.</value>
+    <value>Nėra prieigos prie serverio. Paleidimo programa veikia autonominiu režimu.
+Norėdami išeiti iš autonominio režimo, įsitikinkite, kad serveris yra pasiekiamas, tada paleiskite programą iš naujo.</value>
   </data>
   <data name="OfflineMode" xml:space="preserve">
-    <value>Offline mode</value>
+    <value>Autonominis režimas</value>
   </data>
   <data name="CheckBackendButton" xml:space="preserve">
-    <value>Check the server</value>
+    <value>Tikrinti serverį</value>
   </data>
   <data name="CheckBackendMessage" xml:space="preserve">
-    <value>Checking the availability of the server, please wait</value>
+    <value>Tikrinamas serverio pasiekiamumas, prašome palaukti</value>
   </data>
   <data name="CheckBackendResultFailed" xml:space="preserve">
-    <value>Server is offline right now. Try again later</value>
+    <value>Serveris šiuo metu nepasiekiamas. Bandykite vėliau</value>
   </data>
   <data name="CheckBackendResultSuccessful" xml:space="preserve">
-    <value>Server is online. You need to restart the launcher to turn off offline mode</value>
+    <value>Serveris pasiekiamas. Turite paleisti programą iš naujo, kad išjungtumėte autonominį režimą</value>
   </data>
   <data name="CheckBackendTitle" xml:space="preserve">
-    <value>Checking the server</value>
+    <value>Tikrinamas serveris</value>
   </data>
   <data name="RestartButton" xml:space="preserve">
-    <value>Restart</value>
+    <value>Paleisti iš naujo</value>
   </data>
   <data name="NewsOffline" xml:space="preserve">
-    <value>Unable to load news</value>
+    <value>Nepavyko įkelti naujienų</value>
   </data>
   <data name="NewsEmptyTitle" xml:space="preserve">
-    <value>There is no news right now</value>
+    <value>Šiuo metu naujienų nėra</value>
   </data>
   <data name="NewsEmptyContent" xml:space="preserve">
-    <value>It's empty here</value>
+    <value>Čia tuščia</value>
   </data>
   <data name="BackendOffline" xml:space="preserve">
-    <value>The server is not responding</value>
+    <value>Serveris neatsako</value>
   </data>
   <data name="TwoFactorTitle" xml:space="preserve">
-    <value>Two-factor authentication</value>
+    <value>Dviejų veiksnių autentifikacija</value>
   </data>
   <data name="TwoFactorDescription" xml:space="preserve">
-    <value>Please enter the verification code from your authentication app.</value>
+    <value>Prašome įvesti patvirtinimo kodą iš savo autentifikavimo programos.</value>
   </data>
   <data name="Reinstall" xml:space="preserve">
-    <value>Reinstall</value>
-  </data>
-  <data name="Delete" xml:space="preserve">
-    <value>Delete</value>
+    <value>Įdiegti iš naujo</value>
   </data>
   <data name="ProfileSuccessRemoved" xml:space="preserve">
-    <value>ProfileSuccessRemoved</value>
+    <value>Profilis sėkmingai pašalintas</value>
+  </data>
+  <data name="Delete" xml:space="preserve">
+    <value>Ištrinti</value>
   </data>
 </root>

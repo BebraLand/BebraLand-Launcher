@@ -15,6 +15,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "common", "common", "{09A802
 		.github\workflows\dotnet.yml = .github\workflows\dotnet.yml
 		src\Gml.Client\README.md = src\Gml.Client\README.md
 		.gitmodules = .gitmodules
+		src\Gml.Launcher\Gml.Launcher.parcel = src\Gml.Launcher\Gml.Launcher.parcel
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gml.Launcher", "src\Gml.Launcher\Gml.Launcher.csproj", "{F2771E71-C782-4713-862F-217694DDDFF5}"
@@ -30,6 +31,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "L1.Avalonia.Gif", "src\L1.Avalonia.Gif\L1.Avalonia.Gif.csproj", "{19B15268-CF4D-4571-8DF3-6EBC586BB856}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "launcher", "launcher", "{48DF3E50-4AB6-4569-9C79-E8FAC444434E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gml.Client.GameLoader", "src\Gml.Client\src\Gml.Client.GameLoader\Gml.Client.GameLoader.csproj", "{A57ACA8C-76E8-4A22-8610-74B7A7FD21AA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gml.Client.Interfaces", "src\Gml.Client\src\Gml.Client.Interfaces\Gml.Client.Interfaces.csproj", "{0F140709-2FA3-493B-90D3-8C883AC8410D}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -57,6 +62,14 @@ Global
 		{19B15268-CF4D-4571-8DF3-6EBC586BB856}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{19B15268-CF4D-4571-8DF3-6EBC586BB856}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{19B15268-CF4D-4571-8DF3-6EBC586BB856}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A57ACA8C-76E8-4A22-8610-74B7A7FD21AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A57ACA8C-76E8-4A22-8610-74B7A7FD21AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A57ACA8C-76E8-4A22-8610-74B7A7FD21AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A57ACA8C-76E8-4A22-8610-74B7A7FD21AA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0F140709-2FA3-493B-90D3-8C883AC8410D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0F140709-2FA3-493B-90D3-8C883AC8410D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0F140709-2FA3-493B-90D3-8C883AC8410D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0F140709-2FA3-493B-90D3-8C883AC8410D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -70,5 +83,7 @@ Global
 		{B8E0451C-3C44-470B-9853-C7D0A3648C20} = {662268E9-BD01-43C7-924B-F4F285C8D391}
 		{19B15268-CF4D-4571-8DF3-6EBC586BB856} = {662268E9-BD01-43C7-924B-F4F285C8D391}
 		{F2771E71-C782-4713-862F-217694DDDFF5} = {48DF3E50-4AB6-4569-9C79-E8FAC444434E}
+		{A57ACA8C-76E8-4A22-8610-74B7A7FD21AA} = {662268E9-BD01-43C7-924B-F4F285C8D391}
+		{0F140709-2FA3-493B-90D3-8C883AC8410D} = {662268E9-BD01-43C7-924B-F4F285C8D391}
 	EndGlobalSection
 EndGlobal

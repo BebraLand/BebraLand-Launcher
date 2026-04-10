@@ -27,13 +27,18 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Reactive.Concurrency;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Gml.Client.Extensions;
+using Gml.Client.Interfaces;
 using Gml.Dto.Messages;
 using Gml.Dto.News;
 using Gml.Dto.Profile;
+using GameLoader = GmlCore.Interfaces.Enums.GameLoader;
+using IUser = GmlCore.Interfaces.User.IUser;
 
 namespace Gml.Launcher.ViewModels.Pages;
 
@@ -50,12 +55,11 @@ public class OverviewPageViewModel : PageViewModelBase
     private readonly IStorageService _storageService;
     private readonly ISystemService _systemService;
     private readonly IBackendChecker _backendChecker;
-    private Process? _gameProcess;
     private readonly ISettingsService _settingsService;
     private readonly IDisposable? _speedSubscription;
 
     internal OverviewPageViewModel(IScreen screen,
-        IUser user,
+        ILauncherUser user,
         IObservable<bool> onClosed,
         IGmlClientManager? gmlManager = null,
         ISystemService? systemService = null,
@@ -142,22 +146,81 @@ public class OverviewPageViewModel : PageViewModelBase
 
         PlayCommand = ReactiveCommand.CreateFromTask(StartGame);
 
+        RemoveCommand = ReactiveCommand.CreateFromTask(RemoveGame);
+
+        ReinstallCommand = ReactiveCommand.CreateFromTask(ReinstallGame);
+
         BackendIsActive = !_backendChecker.IsOffline;
 
         RxApp.MainThreadScheduler.Schedule(LoadData);
     }
+
+    private async Task ReinstallGame()
+    {
+        try
+        {
+            UpdateProgress(LocalizationService.GetString(SystemConstants.Updating), LocalizationService.GetString(SystemConstants.CheckingFileIntegrity), true);
+
+            var profileInfo = await GetProfileInfo();
+            var data = profileInfo?.Data;
+            if (data != null)
+            {
+                await _gmlManager.RemoveProfileFiles(data);
+            }
+        }
+        catch (Exception exception)
+        {
+            ShowError(SystemConstants.Error, string.Join(". ", exception.Message));
+            SentrySdk.CaptureException(exception);
+        }
+        finally
+        {
+            UpdateProgress(string.Empty, string.Empty, false);
+        }
+
+        // После удаления автоматически запускаем установку/игру
+        await StartGame();
+    }
+
+    private async Task RemoveGame()
+    {
+        try
+        {
+            UpdateProgress(LocalizationService.GetString(SystemConstants.Updating), LocalizationService.GetString(SystemConstants.CheckingFileIntegrity), true);
+
+            var profileInfo = await GetProfileInfo();
+            var data = profileInfo?.Data;
+            if (data != null)
+            {
+                await _gmlManager.RemoveProfileFiles(data);
+            }
+        }
+        catch (Exception exception)
+        {
+            ShowError(SystemConstants.Error, string.Join(". ", exception.Message));
+            SentrySdk.CaptureException(exception);
+        }
+        finally
+        {
+            UpdateProgress(string.Empty, string.Empty, false);
+            ShowSuccess(SystemConstants.Success, LocalizationService.GetString(SystemConstants.ProfileSuccessRemoved));
+        }
+    }
+
     [Reactive] public bool IsModsButtonVisible { get; private set; }
 
-    public new string Title => LocalizationService.GetString(ResourceKeysDictionary.MainPageTitle);
+    public new string Title => LocalizationService.GetString(SystemConstants.MainPageTitle);
 
     public ICommand GoProfileCommand { get; set; }
     public ICommand GoModsCommand { get; set; }
     public ICommand LogoutCommand { get; set; }
     public ICommand PlayCommand { get; set; }
+    public ICommand RemoveCommand { get; set; }
+    public ICommand ReinstallCommand { get; set; }
     public ICommand GoSettingsCommand { get; set; }
     public ICommand HomeCommand { get; set; }
     public ListViewModel ListViewModel { get; } = new();
-    public IUser User { get; }
+    public ILauncherUser User { get; }
     public bool BackendIsActive { get; }
 
     [Reactive] public int? LoadingPercentage { get; set; }
@@ -215,9 +278,9 @@ public class OverviewPageViewModel : PageViewModelBase
         LoadedCount = count;
 
         Description =
-            $"{LocalizationService.GetString(ResourceKeysDictionary.Stay)}: " +
+            $"{LocalizationService.GetString(SystemConstants.Stay)}: " +
             $"{MaxCount - LoadedCount} " +
-            $"{LocalizationService.GetString(ResourceKeysDictionary.Files)}";
+            $"{LocalizationService.GetString(SystemConstants.Files)}";
     }
 
     private async void SaveSelectedServer(ProfileReadDto? profile)
@@ -239,52 +302,48 @@ public class OverviewPageViewModel : PageViewModelBase
     {
         var tokenSource = new CancellationTokenSource();
         var cancellationToken = tokenSource.Token;
+        var disposable =  new CompositeDisposable();
 
         await ExecuteFromNewThread(async () =>
         {
             try
             {
+                UpdateProgress(
+                    LocalizationService.GetString(SystemConstants.Updating),
+                    LocalizationService.GetString(SystemConstants.CheckingFileIntegrity),
+                    true);
+
                 var profileInfo = await GetProfileInfo();
 
-                if (profileInfo is { Data: not null })
-                {
-                    _gameProcess?.Close();
-                    _gameProcess = await GenerateProcess(cancellationToken, profileInfo);
-                    _gameProcess.Start();
-                    _gameProcess.StartWatch();
-                    _gameProcess.BeginOutputReadLine();
-                    _gameProcess.BeginErrorReadLine();
+                _gmlManager.Gameloader.GameLaunched
+                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .Subscribe(c => _mainViewModel._gameLaunched.OnNext(true))
+                    .DisposeWith(disposable);
 
-                    Dispatcher.UIThread.Invoke(() => _mainViewModel._gameLaunched.OnNext(true));
-                    UpdateProgress(string.Empty, string.Empty, false);
-                    await _gameProcess.WaitForExitAsync(cancellationToken);
-
-                    if (_gameProcess.ExitCode != 0)
-                    {
-                        throw new MinecraftException(
-                            $"Произошел краш игры. {string.Join("\n", _logHandler.RecentLogs)}");
-                    }
-                }
-                else
-                {
-                    ShowError(ResourceKeysDictionary.Error, ResourceKeysDictionary.ProfileNotConfigured);
-                }
+                await _gmlManager.Gameloader.StartGameAsync(profileInfo, !_backendChecker.IsOffline);
             }
             catch (UnauthorizedAccessException)
             {
                 await OnLogout(CancellationToken.None);
             }
+            catch (ProfileNotLoadedException exception)
+            {
+                ShowError(SystemConstants.Error,
+                    LocalizationService.GetString(SystemConstants.ProfileNotConfigured));
+                SentrySdk.CaptureException(exception);
+                Console.WriteLine(exception);
+            }
             catch (FileNotFoundException exception)
             {
-                ShowError(ResourceKeysDictionary.Error,
-                    LocalizationService.GetString(ResourceKeysDictionary.JavaNotFound));
+                ShowError(SystemConstants.Error,
+                    LocalizationService.GetString(SystemConstants.JavaNotFound));
                 SentrySdk.CaptureException(exception);
                 Console.WriteLine(exception);
             }
             catch (IOException ioException) when (_systemService.IsDiskFull(ioException))
             {
-                ShowError(ResourceKeysDictionary.Error,
-                    LocalizationService.GetString(ResourceKeysDictionary.IsDiskFull));
+                ShowError(SystemConstants.Error,
+                    LocalizationService.GetString(SystemConstants.IsDiskFull));
 
                 SentrySdk.CaptureException(ioException);
                 Console.WriteLine(ioException);
@@ -292,14 +351,14 @@ public class OverviewPageViewModel : PageViewModelBase
             catch (MinecraftException exception)
             {
                 _logHandler.RecentLogs.Clear();
-                ShowError(ResourceKeysDictionary.Error,
+                ShowError(SystemConstants.Error,
                     LocalizationService.GetString(SystemConstants.MinecraftExceptionStartException));
 
                 SentrySdk.CaptureException(exception);
             }
             catch (TaskCanceledException exception)
             {
-                ShowError(ResourceKeysDictionary.Error,
+                ShowError(SystemConstants.Error,
                     LocalizationService.GetString(SystemConstants.MinecraftExceptionStartException));
 
                 SentrySdk.CaptureException(exception);
@@ -308,83 +367,36 @@ public class OverviewPageViewModel : PageViewModelBase
             }
             catch (Exception exception)
             {
-                ShowError(ResourceKeysDictionary.Error, string.Join(". ", exception.Message));
+                ShowError(SystemConstants.Error, string.Join(". ", exception.Message));
 
                 SentrySdk.CaptureException(exception);
                 Console.WriteLine(exception);
             }
             finally
             {
-                _gameProcess?.Dispose();
+                disposable.Dispose();
                 Dispatcher.UIThread.Invoke(() => _mainViewModel._gameLaunched.OnNext(false));
                 UpdateProgress(string.Empty, string.Empty, false);
                 if (!_backendChecker.IsOffline)
                 {
                     await _gmlManager.UpdateDiscordRpcState(
-                        LocalizationService.GetString(ResourceKeysDictionary.DefaultDRpcText));
+                        LocalizationService.GetString(SystemConstants.DefaultDRpcText));
                 }
             }
         });
     }
 
-    private async Task<Process> GenerateProcess(CancellationToken cancellationToken,
-        ResponseMessage<ProfileReadInfoDto?> profileInfo)
-    {
-        UpdateProgress(
-            LocalizationService.GetString(ResourceKeysDictionary.Updating),
-            LocalizationService.GetString(ResourceKeysDictionary.CheckingFileIntegrity),
-            true);
-
-        if (profileInfo.Data is null)
-            throw new Exception(LocalizationService.GetString(ResourceKeysDictionary.ProfileNotConfigured));
-
-        if (!_backendChecker.IsOffline)
-        {
-            await _gmlManager.DownloadNotInstalledFiles(profileInfo.Data, cancellationToken);
-        }
-
-        var process = await _gmlManager.GetProcess(profileInfo.Data, _systemService.GetOsType(), _backendChecker.IsOffline);
-
-        process.OutputDataReceived += (_, e) =>
-        {
-            if (!string.IsNullOrEmpty(e.Data))
-            {
-                Debug.WriteLine(e.Data);
-                _logHandler.ProcessLogs(e.Data);
-            }
-        };
-
-        process.ErrorDataReceived += (sender, e) =>
-        {
-            if (e.Data is null || string.IsNullOrEmpty(e.Data))
-            {
-                return;
-            }
-
-            Debug.WriteLine(e.Data);
-
-            _logHandler.ProcessLogs(e.Data);
-        };
-
-        UpdateProgress(
-            LocalizationService.GetString(ResourceKeysDictionary.Launching),
-            LocalizationService.GetString(ResourceKeysDictionary.PreparingLaunch),
-            true);
-
-        return process;
-    }
-
     private async Task<ResponseMessage<ProfileReadInfoDto?>?> GetProfileInfo()
     {
         UpdateProgress(
-            LocalizationService.GetString(ResourceKeysDictionary.Updating),
-            LocalizationService.GetString(ResourceKeysDictionary.UpdatingDescription),
+            LocalizationService.GetString(SystemConstants.Updating),
+            LocalizationService.GetString(SystemConstants.UpdatingDescription),
             true);
 
         if (!_backendChecker.IsOffline)
         {
             await _gmlManager.UpdateDiscordRpcState(
-                $"{LocalizationService.GetString(ResourceKeysDictionary.PlayDRpcText)} \"{ListViewModel.SelectedProfile!.Name}\"");
+                $"{LocalizationService.GetString(SystemConstants.PlayDRpcText)} \"{ListViewModel.SelectedProfile!.Name}\"");
         }
 
         var settings = await _storageService.GetAsync<SettingsInfo>(StorageConstants.Settings) ?? SettingsInfo.Default;
@@ -424,7 +436,7 @@ public class OverviewPageViewModel : PageViewModelBase
 
         var minValue = Math.Min(recommendedRam, maxRam);
 
-        return minValue == 0 && ListViewModel.SelectedProfile?.RecommendedRam == 0 ? 512 : minValue;
+        return minValue == 0 && ListViewModel.SelectedProfile?.RecommendedRam == 0 ? 1024 : minValue;
     }
 
     private static string FormatBytes(long bytes)
@@ -459,7 +471,7 @@ public class OverviewPageViewModel : PageViewModelBase
     {
         try
         {
-            _gameProcess?.Kill();
+            _gmlManager.Gameloader.ForceStop();
         }
         catch (Exception exception)
         {
@@ -478,7 +490,7 @@ public class OverviewPageViewModel : PageViewModelBase
             {
                 await _gmlManager.LoadDiscordRpc();
                 await _gmlManager.UpdateDiscordRpcState(
-                    LocalizationService.GetString(ResourceKeysDictionary.DefaultDRpcText));
+                    LocalizationService.GetString(SystemConstants.DefaultDRpcText));
             }
         }
         catch (TaskCanceledException exception)
@@ -509,9 +521,9 @@ public class OverviewPageViewModel : PageViewModelBase
                 [
                     new NewsReadDto
                     {
-                        Title = LocalizationService.GetString(ResourceKeysDictionary.NewsOffline),
+                        Title = LocalizationService.GetString(SystemConstants.NewsOffline),
                         Content =
-                            $"<div style='text-align: center; margin-top: 100 px; margin-bottom: 100 px;'>{LocalizationService.GetString(ResourceKeysDictionary.NewsOffline)}</div>",
+                            $"<div style='text-align: center; margin-top: 100 px; margin-bottom: 100 px;'>{LocalizationService.GetString(SystemConstants.NewsOffline)}</div>",
                         Date = null,
                         Type = NewsListenerType.Custom
                     }
@@ -527,9 +539,9 @@ public class OverviewPageViewModel : PageViewModelBase
                 [
                     new NewsReadDto
                     {
-                        Title = LocalizationService.GetString(ResourceKeysDictionary.NewsEmptyTitle),
+                        Title = LocalizationService.GetString(SystemConstants.NewsEmptyTitle),
                         Content =
-                            $"<div style='text-align: center; margin-top: 100 px; margin-bottom: 100 px;'>{LocalizationService.GetString(ResourceKeysDictionary.NewsEmptyContent)}</div>",
+                            $"<div style='text-align: center; margin-top: 100 px; margin-bottom: 100 px;'>{LocalizationService.GetString(SystemConstants.NewsEmptyContent)}</div>",
                         Date = null,
                         Type = NewsListenerType.Custom
                     }
@@ -579,8 +591,8 @@ public class OverviewPageViewModel : PageViewModelBase
             .CreateMessage()
             .Accent("#F15B19")
             .Background("#111111")
-            .HasHeader(LocalizationService.GetString(ResourceKeysDictionary.LostConnection))
-            .HasMessage(LocalizationService.GetString(ResourceKeysDictionary.Reconnecting))
+            .HasHeader(LocalizationService.GetString(SystemConstants.LostConnection))
+            .HasMessage(LocalizationService.GetString(SystemConstants.Reconnecting))
             .WithOverlay(new ProgressBar
             {
                 VerticalAlignment = VerticalAlignment.Bottom,

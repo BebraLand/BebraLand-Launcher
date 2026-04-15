@@ -5,6 +5,8 @@ on:
     branches: [ main, master, develop ]
     tags:
       - 'v*'
+  # pull_request:
+  #   branches: [ main, master, develop ]
   workflow_dispatch:
 
 permissions:
@@ -24,35 +26,28 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        runtime:
+        runtime: 
           - win-x86
           - win-x64
           - win-arm64
-
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         submodules: recursive
-
+    
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
-
-    - name: Cache NuGet packages
-      uses: actions/cache@v3
-      with:
-        path: ~/.nuget/packages
-        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
-        restore-keys: |
-          ${{ runner.os }}-nuget-
-
+    
     - name: Disable Windows Defender
-      run: Set-MpPreference -DisableRealtimeMonitoring $true
+      run: |
+        Set-MpPreference -DisableRealtimeMonitoring $true
       shell: powershell
       continue-on-error: true
-
+    
     - name: Restore dependencies with retry
       shell: bash
       run: |
@@ -69,7 +64,7 @@ jobs:
           echo "Restore failed after $max_attempts attempts"
           exit 1
         fi
-
+    
     - name: Build project
       shell: bash
       run: |
@@ -84,25 +79,27 @@ jobs:
           -p:EnableCompressionInSingleFile=true \
           -p:DebugType=None \
           -p:DebugSymbols=false
-
+    
     - name: Create archive
       shell: bash
       run: |
         cd ./publish/${{ matrix.runtime }}
-        7z a -tzip ../../BebraLand-Launcher-{{ matrix.runtime }}.zip *
-
+        if [ "${{ matrix.runtime }}" == "win-x86" ] || [ "${{ matrix.runtime }}" == "win-x64" ] || [ "${{ matrix.runtime }}" == "win-arm64" ]; then
+          7z a -tzip ../../BebraLand-Launcher-${{ matrix.runtime }}.zip *
+        fi
+    
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: BebraLand-Launcher-{{ matrix.runtime }}
+        name: Gml.Launcher-${{ matrix.runtime }}
         path: ./publish/${{ matrix.runtime }}
         retention-days: 30
-
+    
     - name: Upload release archive
       uses: actions/upload-artifact@v4
       with:
         name: release-${{ matrix.runtime }}
-        path: ./BebraLand-Launcher-{{ matrix.runtime }}.zip
+        path: ./BebraLand-Launcher-${{ matrix.runtime }}.zip
         retention-days: 7
 
   build-linux:
@@ -117,18 +114,18 @@ jobs:
           - linux-musl-x64
           - linux-arm
           - linux-arm64
-
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         submodules: recursive
-
+    
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
-
+    
     - name: Cache NuGet packages
       uses: actions/cache@v3
       with:
@@ -136,10 +133,10 @@ jobs:
         key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
         restore-keys: |
           ${{ runner.os }}-nuget-
-
+    
     - name: Restore dependencies
       run: dotnet restore ${{ env.PROJECT_PATH }}
-
+    
     - name: Build project
       shell: bash
       run: |
@@ -154,25 +151,25 @@ jobs:
           -p:EnableCompressionInSingleFile=true \
           -p:DebugType=None \
           -p:DebugSymbols=false
-
+    
     - name: Create archive
       shell: bash
       run: |
         cd ./publish/${{ matrix.runtime }}
-        tar -czf ../../BebraLand-Launcher-{{ matrix.runtime }}.tar.gz *
-
+        tar -czf ../../BebraLand-Launcher-${{ matrix.runtime }}.tar.gz *
+    
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: BebraLand-Launcher-{{ matrix.runtime }}
+        name: Gml.Launcher-${{ matrix.runtime }}
         path: ./publish/${{ matrix.runtime }}
         retention-days: 30
-
+    
     - name: Upload release archive
       uses: actions/upload-artifact@v4
       with:
         name: release-${{ matrix.runtime }}
-        path: ./BebraLand-Launcher-{{ matrix.runtime }}.tar.gz
+        path: ./BebraLand-Launcher-${{ matrix.runtime }}.tar.gz
         retention-days: 7
 
   build-macos:
@@ -185,18 +182,18 @@ jobs:
         runtime:
           - osx-x64
           - osx-arm64
-
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
         submodules: recursive
-
+    
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
-
+    
     - name: Cache NuGet packages
       uses: actions/cache@v3
       with:
@@ -204,10 +201,10 @@ jobs:
         key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
         restore-keys: |
           ${{ runner.os }}-nuget-
-
+    
     - name: Restore dependencies
       run: dotnet restore ${{ env.PROJECT_PATH }}
-
+    
     - name: Build project
       shell: bash
       run: |
@@ -222,25 +219,25 @@ jobs:
           -p:EnableCompressionInSingleFile=true \
           -p:DebugType=None \
           -p:DebugSymbols=false
-
+    
     - name: Create archive
       shell: bash
       run: |
         cd ./publish/${{ matrix.runtime }}
-        tar -czf ../../BebraLand-Launcher-{{ matrix.runtime }}.tar.gz *
-
+        tar -czf ../../BebraLand-Launcher-${{ matrix.runtime }}.tar.gz *
+    
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: BebraLand-Launcher-{{ matrix.runtime }}
+        name: Gml.Launcher-${{ matrix.runtime }}
         path: ./publish/${{ matrix.runtime }}
         retention-days: 30
-
+    
     - name: Upload release archive
       uses: actions/upload-artifact@v4
       with:
         name: release-${{ matrix.runtime }}
-        path: ./BebraLand-Launcher-{{ matrix.runtime }}.tar.gz
+        path: ./BebraLand-Launcher-${{ matrix.runtime }}.tar.gz
         retention-days: 7
 
   release:
@@ -248,21 +245,21 @@ jobs:
     needs: [build-windows, build-linux, build-macos]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
-
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
+    
     - name: Download all release artifacts
       uses: actions/download-artifact@v4
       with:
         pattern: release-*
         path: ./release-artifacts
         merge-multiple: true
-
+    
     - name: Display artifact structure
       run: ls -lah ./release-artifacts
-
+    
     - name: Extract version from tag or generate from commit
       id: get_version
       run: |
@@ -271,9 +268,9 @@ jobs:
         else
           echo "VERSION=build-${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
         fi
-
+    
     - name: Create Release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ steps.get_version.outputs.VERSION }}
         name: BebraLand Launcher ${{ steps.get_version.outputs.VERSION }}
@@ -283,29 +280,29 @@ jobs:
         generate_release_notes: true
         body: |
           ## BebraLand Launcher ${{ steps.get_version.outputs.VERSION }}
-
+          
           ### Downloads
-
+          
           #### Windows
           - **win-x64**: For 64-bit Windows systems
-          - **win-x86**: For 32-bit Windows systems
+          - **win-x86**: For 32-bit Windows systems  
           - **win-arm64**: For ARM64 Windows systems
-
+          
           #### Linux
           - **linux-x64**: For standard 64-bit Linux distributions
           - **linux-musl-x64**: For Alpine Linux and other musl-based distributions
           - **linux-arm**: For 32-bit ARM Linux systems
           - **linux-arm64**: For 64-bit ARM Linux systems (Raspberry Pi, etc.)
-
+          
           #### macOS
           - **osx-x64**: For Intel-based Macs
           - **osx-arm64**: For Apple Silicon Macs (M1, M2, M3)
-
+          
           ### Installation
           1. Download the appropriate archive for your platform
           2. Extract the archive
           3. Run the launcher executable
-
+          
           **Note**: All builds are self-contained and don't require .NET runtime installation.
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

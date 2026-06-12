@@ -241,6 +241,13 @@ def install_mod_loader(
     )
 
 
+def ram_jvm_arguments(ram_mb: int | None) -> list[str]:
+    if not ram_mb:
+        return []
+    value = max(512, int(ram_mb))
+    return [f"-Xmx{value}M", f"-Xms{min(512, value)}M"]
+
+
 def launch_minecraft(
     manifest: dict[str, Any],
     game_dir: Path,
@@ -248,14 +255,23 @@ def launch_minecraft(
     status: Status,
     progress: Progress | None = None,
     installed_version: str | None = None,
+    ram_mb: int | None = None,
 ) -> subprocess.Popen:
     if installed_version is None:
         installed_version = install_mod_loader(manifest, game_dir, status, progress)
     options = minecraft_launcher_lib.utils.generate_test_options()
+    jvm_arguments = list(options.get("jvmArguments") or [])
+    jvm_arguments = [
+        argument
+        for argument in jvm_arguments
+        if not argument.startswith("-Xmx") and not argument.startswith("-Xms")
+    ]
+    jvm_arguments.extend(ram_jvm_arguments(ram_mb))
     options.update(
         {
             "username": username or "BebraPlayer",
             "gameDirectory": str(game_dir),
+            "jvmArguments": jvm_arguments,
             "launcherName": "BebraLand Launcher",
             "launcherVersion": "0.1.0",
         }
@@ -265,5 +281,8 @@ def launch_minecraft(
         str(game_dir),
         options,
     )
-    status("Start Minecraft")
+    if ram_mb:
+        status(f"Start Minecraft with {int(ram_mb)} MB RAM")
+    else:
+        status("Start Minecraft")
     return subprocess.Popen(command, cwd=str(game_dir))

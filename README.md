@@ -23,7 +23,7 @@ When user clicks `Launch`:
 3. Frontend uses existing Minecraft/modloader install if present; otherwise installs it locally from profile metadata.
 4. Frontend checks pack files by SHA256.
 5. Missing/changed pack files download from backend `/files/...`.
-6. Launcher starts installed Minecraft/modloader profile.
+6. Launcher starts installed Minecraft/modloader profile with selected RAM.
 
 Sync modes:
 
@@ -31,7 +31,9 @@ Sync modes:
 - whitelist: download once if missing, then keep user edits and do not delete matching extra local files
 - blacklist: enforce exact server hash even inside whitelist folders
 
-Launcher saves settings and Azuriom token in `%APPDATA%\BebraLandLauncher\settings.json`. Instance files live in `%APPDATA%\BebraLandLauncher\instances\<profile-slug>`.
+Launcher saves settings, per-profile RAM overrides, and Azuriom token in `%APPDATA%\BebraLandLauncher\settings.json`. Instance files live in `%APPDATA%\BebraLandLauncher\instances\<profile-slug>`.
+
+Backend sends `recommended_ram_mb` for each profile. Launcher uses that value by default, lets player change it with the RAM slider, and warns before launch if selected RAM is below recommended.
 
 ## Build EXE
 

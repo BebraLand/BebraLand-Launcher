@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import ctypes
+import os
 import sys
 import threading
 from typing import Any, Callable
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -15,6 +17,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSlider,
+    QSpinBox,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -26,6 +30,59 @@ from .config import DEFAULT_SERVER_URL
 from .runtime import install_mod_loader, instance_dir, launch_minecraft, sync_manifest
 from .settings import load_settings, save_settings
 from .updater import can_self_replace, download_release, replace_current_exe
+
+
+DEFAULT_RECOMMENDED_RAM_MB = 2048
+MIN_RAM_MB = 512
+MAX_RAM_MB = 16384
+RESERVED_SYSTEM_RAM_MB = 1024
+
+
+def detect_system_ram_mb() -> int | None:
+    if sys.platform.startswith("win"):
+        class MemoryStatusEx(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong),
+                ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+
+        status = MemoryStatusEx()
+        status.dwLength = ctypes.sizeof(MemoryStatusEx)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            return int(status.ullTotalPhys // (1024 * 1024))
+        return None
+
+    if hasattr(os, "sysconf"):
+        try:
+            pages = os.sysconf("SC_PHYS_PAGES")
+            page_size = os.sysconf("SC_PAGE_SIZE")
+        except (OSError, ValueError):
+            return None
+        if isinstance(pages, int) and isinstance(page_size, int):
+            return int(pages * page_size // (1024 * 1024))
+    return None
+
+
+def launcher_ram_limit_mb() -> int:
+    total = detect_system_ram_mb()
+    if not total:
+        return MAX_RAM_MB
+    return max(MIN_RAM_MB, min(MAX_RAM_MB, total - RESERVED_SYSTEM_RAM_MB))
+
+
+def clamp_ram_mb(value: Any, maximum: int) -> int:
+    try:
+        ram_mb = int(value)
+    except (TypeError, ValueError):
+        ram_mb = DEFAULT_RECOMMENDED_RAM_MB
+    return max(MIN_RAM_MB, min(ram_mb, maximum))
 
 
 class Bridge(QObject):
@@ -49,6 +106,7 @@ class LauncherWindow(QWidget):
         self.client = ApiClient(self.settings.get("server_url", DEFAULT_SERVER_URL), self.settings.get("access_token"))
         self.auth_user: dict[str, Any] | None = self.settings.get("user")
         self.profiles: list[dict[str, Any]] = []
+        self.max_ram_mb = launcher_ram_limit_mb()
 
         self.bridge = Bridge()
         self.bridge.log.connect(self.log_line)
@@ -111,6 +169,28 @@ class LauncherWindow(QWidget):
         pack_row.addWidget(self.launch_button)
         root.addLayout(pack_row)
 
+        ram_row = QHBoxLayout()
+        ram_row.addWidget(QLabel("RAM"))
+        self.ram_slider = QSlider(Qt.Orientation.Horizontal)
+        self.ram_slider.setRange(MIN_RAM_MB, self.max_ram_mb)
+        self.ram_slider.setSingleStep(512)
+        self.ram_slider.setPageStep(1024)
+        self.ram_slider.setTickInterval(1024)
+        self.ram_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.ram_slider.valueChanged.connect(self.ram_slider_changed)
+        ram_row.addWidget(self.ram_slider, 1)
+        self.ram_spin = QSpinBox()
+        self.ram_spin.setRange(MIN_RAM_MB, self.max_ram_mb)
+        self.ram_spin.setSingleStep(512)
+        self.ram_spin.setSuffix(" MB")
+        self.ram_spin.valueChanged.connect(self.ram_spin_changed)
+        ram_row.addWidget(self.ram_spin)
+        self.ram_hint = QLabel("")
+        self.ram_hint.setMinimumWidth(220)
+        self.ram_hint.setWordWrap(True)
+        ram_row.addWidget(self.ram_hint)
+        root.addLayout(ram_row)
+
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
         root.addWidget(self.log_output, 1)
@@ -158,6 +238,9 @@ class LauncherWindow(QWidget):
         save_settings(self.settings)
 
     def selected_slug(self) -> str | None:
+        selected_data = self.profile_combo.currentData()
+        if selected_data:
+            return str(selected_data)
         selected = self.profile_combo.currentText()
         for profile in self.profiles:
             label = f"{profile['name']} ({profile['slug']})"
@@ -165,11 +248,94 @@ class LauncherWindow(QWidget):
                 return profile["slug"]
         return None
 
+    def selected_profile(self) -> dict[str, Any] | None:
+        slug = self.selected_slug()
+        if not slug:
+            return None
+        for profile in self.profiles:
+            if profile["slug"] == slug:
+                return profile
+        return None
+
+    def recommended_ram_mb(self, profile: dict[str, Any] | None = None) -> int:
+        profile = profile or self.selected_profile()
+        if not profile:
+            return DEFAULT_RECOMMENDED_RAM_MB
+        return clamp_ram_mb(profile.get("recommended_ram_mb", DEFAULT_RECOMMENDED_RAM_MB), self.max_ram_mb)
+
+    def raw_recommended_ram_mb(self, profile: dict[str, Any] | None = None) -> int:
+        profile = profile or self.selected_profile()
+        if not profile:
+            return DEFAULT_RECOMMENDED_RAM_MB
+        try:
+            return int(profile.get("recommended_ram_mb", DEFAULT_RECOMMENDED_RAM_MB))
+        except (TypeError, ValueError):
+            return DEFAULT_RECOMMENDED_RAM_MB
+
+    def selected_ram_mb(self) -> int:
+        return clamp_ram_mb(self.ram_spin.value(), self.max_ram_mb)
+
+    def ram_overrides(self) -> dict[str, Any]:
+        overrides = self.settings.get("profile_ram_mb")
+        if not isinstance(overrides, dict):
+            overrides = {}
+            self.settings["profile_ram_mb"] = overrides
+        return overrides
+
+    def profile_ram_value(self, profile: dict[str, Any]) -> int:
+        overrides = self.ram_overrides()
+        return clamp_ram_mb(overrides.get(profile["slug"], profile.get("recommended_ram_mb")), self.max_ram_mb)
+
+    def set_ram_controls(self, ram_mb: int, save: bool = False) -> None:
+        ram_mb = clamp_ram_mb(ram_mb, self.max_ram_mb)
+        self.ram_slider.blockSignals(True)
+        self.ram_spin.blockSignals(True)
+        self.ram_slider.setValue(ram_mb)
+        self.ram_spin.setValue(ram_mb)
+        self.ram_slider.blockSignals(False)
+        self.ram_spin.blockSignals(False)
+        self.update_ram_hint()
+        if save:
+            profile = self.selected_profile()
+            if profile:
+                overrides = self.ram_overrides()
+                overrides[profile["slug"]] = ram_mb
+                save_settings(self.settings)
+
+    def update_ram_controls(self) -> None:
+        profile = self.selected_profile()
+        if profile:
+            self.set_ram_controls(self.profile_ram_value(profile), save=False)
+        else:
+            self.set_ram_controls(DEFAULT_RECOMMENDED_RAM_MB, save=False)
+
+    def update_ram_hint(self) -> None:
+        profile = self.selected_profile()
+        recommended = self.recommended_ram_mb(profile)
+        value = self.selected_ram_mb()
+        raw_recommended = self.raw_recommended_ram_mb(profile)
+        if raw_recommended > self.max_ram_mb:
+            self.ram_hint.setText(f"Recommended {raw_recommended} MB, capped at {self.max_ram_mb} MB")
+            self.ram_hint.setStyleSheet("color: #b45309;")
+        elif value < recommended:
+            self.ram_hint.setText(f"Below recommended: {recommended} MB")
+            self.ram_hint.setStyleSheet("color: #b91c1c;")
+        else:
+            self.ram_hint.setText(f"Recommended: {recommended} MB")
+            self.ram_hint.setStyleSheet("color: #4b5563;")
+
+    def ram_slider_changed(self, value: int) -> None:
+        self.set_ram_controls(value, save=True)
+
+    def ram_spin_changed(self, value: int) -> None:
+        self.set_ram_controls(value, save=True)
+
     def profile_changed(self) -> None:
         slug = self.selected_slug()
         if slug:
             self.settings["selected_profile"] = slug
             save_settings(self.settings)
+        self.update_ram_controls()
 
     def refresh_profiles(self) -> None:
         self.reset_client()
@@ -186,7 +352,7 @@ class LauncherWindow(QWidget):
         self.profiles = profiles
         self.profile_combo.clear()
         for profile in profiles:
-            self.profile_combo.addItem(f"{profile['name']} ({profile['slug']})")
+            self.profile_combo.addItem(f"{profile['name']} ({profile['slug']})", profile["slug"])
         if current_slug:
             for index, profile in enumerate(profiles):
                 if profile["slug"] == current_slug:
@@ -196,6 +362,7 @@ class LauncherWindow(QWidget):
             index = self.profile_combo.findText(current)
             if index >= 0:
                 self.profile_combo.setCurrentIndex(index)
+        self.update_ram_controls()
         self.log_line(f"Profiles: {len(profiles)}")
 
     def set_auth(self, payload: dict[str, Any]) -> None:
@@ -258,6 +425,17 @@ class LauncherWindow(QWidget):
         if not slug:
             QMessageBox.warning(self, "BebraLand", "Choose pack first")
             return
+        profile = self.selected_profile()
+        recommended_ram_mb = self.recommended_ram_mb(profile)
+        ram_mb = self.selected_ram_mb()
+        if ram_mb < recommended_ram_mb:
+            answer = QMessageBox.question(
+                self,
+                "BebraLand RAM",
+                f"Selected RAM ({ram_mb} MB) is below recommended ({recommended_ram_mb} MB). Launch anyway?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
         self.reset_client()
 
         def task() -> None:
@@ -274,6 +452,7 @@ class LauncherWindow(QWidget):
                 self.bridge.log.emit,
                 self.bridge.progress.emit,
                 installed_version=installed_version,
+                ram_mb=ram_mb,
             )
 
         self.run_bg(task)

@@ -1,0 +1,9 @@
+.venv/
+.uv-cache/
+.uv-python/
+dist*/
+build/
+*.spec
+__pycache__/
+*.pyc
+resources/*.exe

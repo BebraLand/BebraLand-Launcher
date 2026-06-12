@@ -1,0 +1,26 @@
+[project]
+name = "bebraland-frontend"
+version = "0.1.0"
+description = "BebraLand Python launcher frontend."
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "minecraft-launcher-lib>=8.0",
+    "PySide6>=6.9.0",
+    "requests>=2.32.0",
+]
+
+[project.scripts]
+bebraland-launcher = "bebraland_frontend.app:main"
+
+[project.optional-dependencies]
+build = [
+    "pyinstaller>=6.11.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true

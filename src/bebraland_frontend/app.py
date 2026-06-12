@@ -118,6 +118,7 @@ class LauncherWindow(QWidget):
         self.bridge.progress.connect(self.set_progress)
 
         self.build_ui()
+        self.configure_client_events()
         if self.auth_user:
             self.show_logged_user(self.auth_user, prefix="Saved login")
         self.verify_saved_login()
@@ -232,8 +233,20 @@ class LauncherWindow(QWidget):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def configure_client_events(self) -> None:
+        self.client.set_event_handlers(
+            profiles_changed=self.bridge.profiles.emit,
+            log=self.bridge.log.emit,
+        )
+        self.client.start_event_stream()
+
     def reset_client(self) -> None:
-        self.client = ApiClient(self.server_input.text().strip(), self.client.token)
+        server_url = self.server_input.text().strip()
+        if server_url.rstrip("/") != self.client.server_url:
+            token = self.client.token
+            self.client.close()
+            self.client = ApiClient(server_url, token)
+            self.configure_client_events()
         self.settings["server_url"] = self.client.server_url
         save_settings(self.settings)
 
@@ -390,8 +403,9 @@ class LauncherWindow(QWidget):
             try:
                 payload = self.client.azuriom_verify(token)
             except Exception as exc:
+                status_code = getattr(exc, "status_code", None)
                 response = getattr(exc, "response", None)
-                if response is not None and response.status_code in {401, 403}:
+                if status_code in {401, 403} or (response is not None and response.status_code in {401, 403}):
                     self.settings.pop("access_token", None)
                     self.settings.pop("user", None)
                     save_settings(self.settings)
@@ -490,6 +504,10 @@ class LauncherWindow(QWidget):
                 self.bridge.log.emit("Run downloaded EXE manually in dev mode")
 
         self.run_bg(task)
+
+    def closeEvent(self, event: Any) -> None:
+        self.client.close()
+        super().closeEvent(event)
 
 
 def main() -> None:

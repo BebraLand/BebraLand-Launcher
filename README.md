@@ -1,6 +1,6 @@
 # BebraLand Launcher Frontend
 
-Python GUI launcher. Connects to backend, logs in by Azuriom, asks backend for profile manifest, installs Minecraft/modloader locally through `minecraft-launcher-lib`, checks local pack files by SHA256, downloads missing or changed pack files from backend, then starts Minecraft.
+Python GUI launcher. Connects to backend through WebSocket, logs in by Azuriom, asks backend for profile manifest, installs Minecraft/modloader locally through `minecraft-launcher-lib`, checks local pack files by SHA256, downloads missing or changed pack files from backend, then starts Minecraft.
 
 ## Run with uv
 
@@ -18,12 +18,14 @@ Default backend URL: `http://127.0.0.1:8765`.
 
 When user clicks `Launch`:
 
-1. Frontend requests latest manifest from backend.
+1. Frontend requests latest manifest from backend over WebSocket.
 2. Backend rebuilds manifest from server profile folder.
 3. Frontend uses existing Minecraft/modloader install if present; otherwise installs it locally from profile metadata.
 4. Frontend checks pack files by SHA256.
 5. Missing/changed pack files download from backend `/files/...`.
 6. Launcher starts installed Minecraft/modloader profile with selected RAM.
+
+Launcher keeps `/api/v1/ws` open while running. If backend shell/CLI creates, deletes, clones, edits RAM, or builds pack while server is running, backend pushes `profiles.changed` and the pack combo updates live.
 
 Sync modes:
 
@@ -37,6 +39,20 @@ Backend sends `recommended_ram_mb` for each profile. Launcher uses that value by
 
 ## Build EXE
 
+Windows:
+
+```powershell
+.\build_frontend.bat
+```
+
+Git Bash/Linux/macOS:
+
+```sh
+./build_frontend.sh
+```
+
+Old PowerShell helper still works:
+
 ```powershell
 .\scripts\build_exe.ps1
 ```
@@ -45,7 +61,7 @@ Output: `dist\BebraLandLauncher.exe`.
 
 ## Update flow
 
-On start launcher calls backend update endpoint. If backend release metadata has newer version, launcher downloads EXE, verifies SHA256, and if running as frozen Windows EXE replaces itself through small restart script.
+On start launcher asks backend for update metadata over WebSocket. If backend release metadata has newer version, launcher downloads EXE, verifies SHA256, and if running as frozen Windows EXE replaces itself through small restart script.
 
 ## Auth
 

@@ -20,7 +20,7 @@ When user clicks `Launch`:
 
 1. Frontend requests latest manifest from backend.
 2. Backend rebuilds manifest from server profile folder.
-3. Frontend installs Minecraft version, modloader, and modloader version from profile metadata.
+3. Frontend uses existing Minecraft/modloader install if present; otherwise installs it locally from profile metadata.
 4. Frontend checks pack files by SHA256.
 5. Missing/changed pack files download from backend `/files/...`.
 6. Launcher starts installed Minecraft/modloader profile.
@@ -47,10 +47,6 @@ On start launcher calls backend update endpoint. If backend release metadata has
 
 ## Auth
 
-Azuriom auth works through backend:
-
-```powershell
-$env:AZURIOM_URL = "https://your-azuriom-site.example"
-```
+Azuriom auth works through backend. Backend Azuriom URL lives in backend `.env` as `AZURIOM_URL=...`.
 
 Minecraft launch still uses `minecraft-launcher-lib.utils.generate_test_options()` for prototype mode. Next step: map Azuriom/Microsoft profile data into real `username`, `uuid`, `token` for `minecraft_launcher_lib.command.get_minecraft_command`.

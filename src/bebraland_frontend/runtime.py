@@ -23,10 +23,19 @@ PROTECTED_LOCAL_PATTERNS = [
     "versions/**",
     "runtime/**",
     "runtimes/**",
+    "downloads/**",
     "saves/**",
     "screenshots/**",
     "logs/**",
     "crash-reports/**",
+    "launcher_profiles.json",
+    "launcher_accounts.json",
+    "usercache.json",
+    "usernamecache.json",
+    "options.txt",
+    "optionsof.txt",
+    "servers.dat",
+    "servers.dat_old",
 ]
 
 
@@ -77,6 +86,22 @@ def state_dir(game_dir: Path) -> Path:
     path = game_dir / ".bebraland"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def installed_version_id(profile: dict[str, Any]) -> str:
+    loader_id = profile["mod_loader"].lower()
+    minecraft_version = profile["minecraft_version"]
+    loader_version = profile.get("loader_version") or None
+    if loader_id in {"vanilla", "minecraft", "none"}:
+        return minecraft_version
+    if not loader_version:
+        raise ValueError(f"Loader version required for {loader_id}")
+    mod_loader = minecraft_launcher_lib.mod_loader.get_mod_loader(loader_id)
+    return mod_loader.get_installed_version(minecraft_version, loader_version)
+
+
+def version_is_installed(game_dir: Path, version_id: str) -> bool:
+    return (game_dir / "versions" / version_id / f"{version_id}.json").is_file()
 
 
 def read_old_manifest(game_dir: Path) -> dict[str, Any] | None:
@@ -209,6 +234,11 @@ def install_mod_loader(
             progress(value, int(current_status["max"] or 0), current_status["text"])
 
     callback = {"setStatus": set_status, "setMax": set_max, "setProgress": set_progress}
+    installed_version = installed_version_id(profile)
+    if version_is_installed(game_dir, installed_version):
+        status(f"Use installed {installed_version}")
+        return installed_version
+
     if loader_id in {"vanilla", "minecraft", "none"}:
         status(f"Install Minecraft {minecraft_version}")
         minecraft_launcher_lib.install.install_minecraft_version(minecraft_version, str(game_dir), callback=callback)
@@ -230,8 +260,10 @@ def launch_minecraft(
     username: str,
     status: Status,
     progress: Progress | None = None,
+    installed_version: str | None = None,
 ) -> subprocess.Popen:
-    installed_version = install_mod_loader(manifest, game_dir, status, progress)
+    if installed_version is None:
+        installed_version = install_mod_loader(manifest, game_dir, status, progress)
     options = minecraft_launcher_lib.utils.generate_test_options()
     options.update(
         {

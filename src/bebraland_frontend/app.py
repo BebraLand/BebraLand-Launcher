@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 from . import __version__
 from .api import ApiClient
 from .config import DEFAULT_SERVER_URL
-from .runtime import launch_minecraft, sync_manifest
+from .runtime import install_mod_loader, instance_dir, launch_minecraft, sync_manifest
 from .settings import load_settings, save_settings
 from .updater import can_self_replace, download_release, replace_current_exe
 
@@ -49,8 +49,6 @@ class LauncherWindow(QWidget):
         self.client = ApiClient(self.settings.get("server_url", DEFAULT_SERVER_URL), self.settings.get("access_token"))
         self.auth_user: dict[str, Any] | None = self.settings.get("user")
         self.profiles: list[dict[str, Any]] = []
-        self.current_manifest: dict[str, Any] | None = None
-        self.auto_sync_done = False
 
         self.bridge = Bridge()
         self.bridge.log.connect(self.log_line)
@@ -108,9 +106,6 @@ class LauncherWindow(QWidget):
         self.profile_combo = QComboBox()
         self.profile_combo.currentIndexChanged.connect(self.profile_changed)
         pack_row.addWidget(self.profile_combo, 1)
-        self.sync_button = QPushButton("Sync")
-        self.sync_button.clicked.connect(self.sync_selected)
-        pack_row.addWidget(self.sync_button)
         self.launch_button = QPushButton("Launch")
         self.launch_button.clicked.connect(self.launch_selected)
         pack_row.addWidget(self.launch_button)
@@ -202,9 +197,6 @@ class LauncherWindow(QWidget):
             if index >= 0:
                 self.profile_combo.setCurrentIndex(index)
         self.log_line(f"Profiles: {len(profiles)}")
-        if profiles and not self.auto_sync_done:
-            self.auto_sync_done = True
-            self.sync_selected(auto=True)
 
     def set_auth(self, payload: dict[str, Any]) -> None:
         self.auth_user = payload["user"]
@@ -261,22 +253,6 @@ class LauncherWindow(QWidget):
 
         self.run_bg(task)
 
-    def sync_selected(self, auto: bool = False) -> None:
-        slug = self.selected_slug()
-        if not slug:
-            if not auto:
-                QMessageBox.warning(self, "BebraLand", "Choose pack first")
-            return
-        self.reset_client()
-
-        def task() -> None:
-            self.bridge.log.emit(f"Fetch manifest {slug}")
-            manifest = self.client.latest_manifest(slug)
-            sync_manifest(manifest, self.client.server_url, self.bridge.log.emit, self.bridge.progress.emit)
-            self.current_manifest = manifest
-
-        self.run_bg(task, popup=not auto)
-
     def launch_selected(self) -> None:
         slug = self.selected_slug()
         if not slug:
@@ -285,13 +261,20 @@ class LauncherWindow(QWidget):
         self.reset_client()
 
         def task() -> None:
-            manifest = self.current_manifest
-            if not manifest or manifest["profile"]["slug"] != slug:
-                manifest = self.client.latest_manifest(slug)
+            self.bridge.log.emit(f"Fetch manifest {slug}")
+            manifest = self.client.latest_manifest(slug)
+            game_dir = instance_dir(manifest["profile"]["slug"])
+            installed_version = install_mod_loader(manifest, game_dir, self.bridge.log.emit, self.bridge.progress.emit)
             game_dir = sync_manifest(manifest, self.client.server_url, self.bridge.log.emit, self.bridge.progress.emit)
             username = (self.auth_user or {}).get("display_name") or "BebraPlayer"
-            launch_minecraft(manifest, game_dir, username, self.bridge.log.emit, self.bridge.progress.emit)
-            self.current_manifest = manifest
+            launch_minecraft(
+                manifest,
+                game_dir,
+                username,
+                self.bridge.log.emit,
+                self.bridge.progress.emit,
+                installed_version=installed_version,
+            )
 
         self.run_bg(task)
 

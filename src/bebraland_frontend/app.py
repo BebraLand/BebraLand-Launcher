@@ -7,6 +7,7 @@ import threading
 from typing import Any, Callable
 
 from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -36,6 +37,22 @@ DEFAULT_RECOMMENDED_RAM_MB = 2048
 MIN_RAM_MB = 512
 MAX_RAM_MB = 16384
 RESERVED_SYSTEM_RAM_MB = 1024
+PROGRESS_DETAIL_WIDTH = 430
+
+
+def is_progress_detail_part(text: str) -> bool:
+    value = text.strip()
+    if value.startswith("ETA ") or "/s" in value or value.endswith("files"):
+        return True
+    return " / " in value and any(unit in value for unit in (" B", " KB", " MB", " GB", " TB"))
+
+
+def split_progress_label(label: str) -> tuple[str, str]:
+    parts = label.split(" - ")
+    for index, part in enumerate(parts[1:], start=1):
+        if is_progress_detail_part(part):
+            return " - ".join(parts[:index]), "    ".join(parts[index:])
+    return label, ""
 
 
 def detect_system_ram_mb() -> int | None:
@@ -196,8 +213,20 @@ class LauncherWindow(QWidget):
         self.log_output.setReadOnly(True)
         root.addWidget(self.log_output, 1)
 
+        status_row = QHBoxLayout()
+        status_row.setSpacing(12)
         self.status = QLabel(f"BebraLand Launcher {__version__}")
-        root.addWidget(self.status)
+        self.status.setMinimumWidth(0)
+        self.status.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        status_row.addWidget(self.status, 1)
+        self.progress_detail = QLabel("")
+        self.progress_detail.setFixedWidth(PROGRESS_DETAIL_WIDTH)
+        self.progress_detail.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        detail_font = QFont("Consolas")
+        detail_font.setStyleHint(QFont.StyleHint.Monospace)
+        self.progress_detail.setFont(detail_font)
+        status_row.addWidget(self.progress_detail)
+        root.addLayout(status_row)
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
@@ -206,6 +235,7 @@ class LauncherWindow(QWidget):
     def log_line(self, text: str) -> None:
         self.log_output.append(text)
         self.status.setText(text)
+        self.progress_detail.clear()
 
     def show_error(self, text: str) -> None:
         self.log_line(f"Error: {text}")
@@ -219,7 +249,10 @@ class LauncherWindow(QWidget):
             self.progress_bar.setRange(0, 100)
             self.progress_bar.setValue(max(0, min(value, 100)))
         if label:
-            self.status.setText(label)
+            status_text, detail_text = split_progress_label(label)
+            self.status.setText(status_text)
+            self.status.setToolTip(label)
+            self.progress_detail.setText(detail_text)
 
     def run_bg(self, fn: Callable[[], Any], popup: bool = True) -> None:
         def worker() -> None:

@@ -4,8 +4,11 @@ import fnmatch
 import hashlib
 import json
 import subprocess
+import threading
+import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 import minecraft_launcher_lib
 import requests
@@ -16,6 +19,7 @@ from .config import launcher_data_dir
 
 Status = Callable[[str], None]
 Progress = Callable[[int, int, str], None]
+PROGRESS_SCALE = 10_000
 SYSTEM_PROTECTED_LOCAL_PATTERNS = [
     ".bebraland/**",
     "assets/**",
@@ -24,6 +28,248 @@ SYSTEM_PROTECTED_LOCAL_PATTERNS = [
     "runtime/**",
     "runtimes/**",
 ]
+
+
+def format_bytes(value: float) -> str:
+    units = ("B", "KB", "MB", "GB", "TB")
+    size = max(0.0, float(value))
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
+
+
+def format_duration(seconds: float) -> str:
+    total_seconds = max(0, int(seconds + 0.5))
+    if total_seconds < 60:
+        return f"{total_seconds}s"
+    minutes, seconds_part = divmod(total_seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m {seconds_part:02d}s"
+    hours, minutes_part = divmod(minutes, 60)
+    return f"{hours}h {minutes_part:02d}m"
+
+
+def format_eta(remaining: float, speed: float) -> str | None:
+    if remaining <= 0 or speed <= 0:
+        return None
+    seconds = remaining / speed
+    if seconds < 1:
+        return "ETA <1s"
+    return f"ETA {format_duration(seconds)}"
+
+
+def scaled_progress(value: int, maximum: int) -> tuple[int, int]:
+    if maximum <= 0:
+        return max(0, value), maximum
+    return int(max(0, min(value, maximum)) / maximum * PROGRESS_SCALE), PROGRESS_SCALE
+
+
+class RateMeter:
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self, value: int = 0) -> None:
+        now = time.monotonic()
+        self._start_time = now
+        self._start_value = value
+        self._last_time = now
+        self._last_value = value
+        self.speed = 0.0
+
+    def update(self, value: int) -> float:
+        now = time.monotonic()
+        elapsed = now - self._last_time
+        delta = value - self._last_value
+        total_elapsed = now - self._start_time
+        total_delta = value - self._start_value
+        if elapsed > 0 and delta > 0 and total_elapsed >= 0.2:
+            average_speed = total_delta / total_elapsed if total_delta > 0 else 0.0
+            current_speed = delta / elapsed if elapsed >= 0.05 else average_speed
+            self.speed = current_speed if self.speed <= 0 else (self.speed * 0.7) + (current_speed * 0.3)
+            if average_speed > 0:
+                self.speed = min(self.speed, average_speed * 2.5)
+        self._last_time = now
+        self._last_value = value
+        return self.speed
+
+
+class ByteProgressTracker:
+    def __init__(self, total_bytes: int) -> None:
+        self.total_bytes = max(0, total_bytes)
+        self.completed_bytes = 0
+        self.rate = RateMeter()
+
+    def emit(self, progress: Progress | None, file_done: int, file_total: int, label: str) -> None:
+        if not progress:
+            return
+        done = self.completed_bytes + max(0, file_done)
+        maximum = self.total_bytes or self.completed_bytes + max(0, file_total)
+        self.rate.update(done)
+        parts = [label]
+        if maximum > 0:
+            parts.append(f"{format_bytes(done)} / {format_bytes(maximum)}")
+        else:
+            parts.append(format_bytes(done))
+        if self.rate.speed > 0:
+            parts.append(f"{format_bytes(self.rate.speed)}/s")
+            eta = format_eta(maximum - done, self.rate.speed) if maximum > 0 else None
+            if eta:
+                parts.append(eta)
+        value, max_value = scaled_progress(done, maximum)
+        progress(value, max_value, " - ".join(parts))
+
+    def finish_file(self, downloaded_bytes: int) -> None:
+        self.completed_bytes += max(0, downloaded_bytes)
+        self.rate.update(self.completed_bytes)
+
+
+class CountingRaw:
+    def __init__(self, raw: Any, on_bytes: Callable[[int], None]) -> None:
+        object.__setattr__(self, "_raw", raw)
+        object.__setattr__(self, "_on_bytes", on_bytes)
+
+    def read(self, *args: Any, **kwargs: Any) -> Any:
+        data = self._raw.read(*args, **kwargs)
+        if data:
+            self._on_bytes(len(data))
+        return data
+
+    def readinto(self, buffer: Any) -> Any:
+        count = self._raw.readinto(buffer)
+        if count:
+            self._on_bytes(int(count))
+        return count
+
+    def stream(self, *args: Any, **kwargs: Any) -> Iterator[bytes]:
+        for chunk in self._raw.stream(*args, **kwargs):
+            if chunk:
+                self._on_bytes(len(chunk))
+            yield chunk
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter(self._raw)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._raw, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in {"_raw", "_on_bytes"}:
+            object.__setattr__(self, name, value)
+            return
+        setattr(self._raw, name, value)
+
+
+@contextmanager
+def track_streamed_request_bytes(on_bytes: Callable[[int], None]) -> Iterator[None]:
+    original_get = requests.get
+    original_session_get = requests.sessions.Session.get
+
+    def wrap_response(response: requests.Response) -> requests.Response:
+        raw = getattr(response, "raw", None)
+        if raw is not None and not isinstance(raw, CountingRaw):
+            response.raw = CountingRaw(raw, on_bytes)
+        return response
+
+    def tracked_get(*args: Any, **kwargs: Any) -> requests.Response:
+        response = original_get(*args, **kwargs)
+        return wrap_response(response) if kwargs.get("stream") else response
+
+    def tracked_session_get(session: requests.sessions.Session, *args: Any, **kwargs: Any) -> requests.Response:
+        response = original_session_get(session, *args, **kwargs)
+        return wrap_response(response) if kwargs.get("stream") else response
+
+    requests.get = tracked_get
+    requests.sessions.Session.get = tracked_session_get
+    try:
+        yield
+    finally:
+        requests.get = original_get
+        requests.sessions.Session.get = original_session_get
+
+
+class MinecraftInstallProgress:
+    def __init__(self, status: Status, progress: Progress | None) -> None:
+        self.status = status
+        self.progress = progress
+        self.lock = threading.Lock()
+        self.phase = "Install Minecraft"
+        self.current = 0
+        self.maximum = 0
+        self.downloaded_bytes = 0
+        self.unit_rate = RateMeter()
+        self.byte_rate = RateMeter()
+        self.last_emit = 0.0
+
+    def set_status(self, text: str) -> None:
+        is_phase = self._is_phase_status(text)
+        with self.lock:
+            if is_phase:
+                self.phase = text
+        if is_phase or not self.progress:
+            self.status(text)
+
+    def set_max(self, value: int) -> None:
+        with self.lock:
+            self.maximum = max(0, int(value))
+            self.current = 0
+            self.unit_rate.reset(0)
+            label = self._label_locked()
+            current = self.current
+            maximum = self.maximum
+        self._emit(current, maximum, label)
+
+    def set_progress(self, value: int) -> None:
+        with self.lock:
+            self.current = max(0, int(value))
+            self.unit_rate.update(self.current)
+            label = self._label_locked()
+            current = self.current
+            maximum = self.maximum
+        self._emit(current, maximum, label)
+
+    def add_downloaded_bytes(self, count: int) -> None:
+        if count <= 0 or not self.progress:
+            return
+        now = time.monotonic()
+        with self.lock:
+            self.downloaded_bytes += count
+            self.byte_rate.update(self.downloaded_bytes)
+            if now - self.last_emit < 0.3:
+                return
+            self.last_emit = now
+            label = self._label_locked()
+            current = self.current
+            maximum = self.maximum
+        self._emit(current, maximum, label)
+
+    def _emit(self, value: int, maximum: int, label: str) -> None:
+        if self.progress:
+            self.progress(value, maximum, label)
+
+    def _label_locked(self) -> str:
+        parts = [self.phase]
+        if self.maximum > 0:
+            parts.append(f"{self.current}/{self.maximum} files")
+        if self.byte_rate.speed > 0:
+            parts.append(f"{format_bytes(self.byte_rate.speed)}/s")
+        elif self.unit_rate.speed > 0:
+            parts.append(f"{self.unit_rate.speed:.1f} files/s")
+        eta = format_eta(self.maximum - self.current, self.unit_rate.speed) if self.maximum > 0 else None
+        if eta:
+            parts.append(eta)
+        return " - ".join(parts)
+
+    @staticmethod
+    def _is_phase_status(text: str) -> bool:
+        return (
+            text in {"Download Libraries", "Download Assets", "Install java runtime", "Installation complete"}
+            or text.startswith("Running ")
+            or text.startswith("Extract ")
+        )
 
 
 def sha256_file(path: Path) -> str:
@@ -109,26 +355,37 @@ def download_file(
     expected_sha256: str,
     status: Status,
     progress: Progress | None = None,
+    progress_tracker: ByteProgressTracker | None = None,
+    progress_label: str | None = None,
 ) -> None:
     tmp = dest.with_suffix(dest.suffix + ".part")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    status(f"Download {dest.name}")
+    label = progress_label or f"Download {dest.name}"
+    if not progress_tracker or not progress:
+        status(label)
     with requests.get(url, stream=True, timeout=60) as response:
         response.raise_for_status()
         total = int(response.headers.get("content-length") or 0)
         done = 0
+        if progress_tracker:
+            progress_tracker.emit(progress, done, total, label)
         with tmp.open("wb") as handle:
             for chunk in response.iter_content(chunk_size=1024 * 512):
                 if chunk:
                     handle.write(chunk)
                     done += len(chunk)
-                    if progress and total:
-                        progress(done, total, f"Download {dest.name}")
+                    if progress_tracker:
+                        progress_tracker.emit(progress, done, total, label)
+                    elif progress and total:
+                        detail = f"{label} - {format_bytes(done)} / {format_bytes(total)}"
+                        progress(done, total, detail)
     actual = sha256_file(tmp)
     if actual != expected_sha256:
         tmp.unlink(missing_ok=True)
         raise ValueError(f"Hash mismatch for {dest}: {actual} != {expected_sha256}")
     tmp.replace(dest)
+    if progress_tracker:
+        progress_tracker.finish_file(done)
 
 
 def cleanup_extra_files(
@@ -163,6 +420,7 @@ def sync_manifest(
     wanted = {item["path"]: item for item in manifest["files"]}
     rules = manifest.get("rules") or {}
     stats = {"checked": len(wanted), "downloaded": 0, "updated": 0, "seeded": 0, "kept": 0, "removed": 0}
+    downloads: list[tuple[str, dict[str, Any], Path, str]] = []
 
     for rel, item in wanted.items():
         target = game_dir / rel
@@ -173,16 +431,29 @@ def sync_manifest(
                 continue
             if sha256_file(target) == item["sha256"]:
                 continue
-            url = absolute_url(server_url, item["url"])
-            download_file(url, target, item["sha256"], status, progress)
-            stats["updated"] += 1
+            downloads.append((rel, item, target, "updated"))
             continue
-        url = absolute_url(server_url, item["url"])
-        download_file(url, target, item["sha256"], status, progress)
         if mode == "seed":
-            stats["seeded"] += 1
+            downloads.append((rel, item, target, "seeded"))
         else:
-            stats["downloaded"] += 1
+            downloads.append((rel, item, target, "downloaded"))
+
+    total_download_bytes = sum(int(item.get("size") or 0) for _, item, _, _ in downloads)
+    download_progress = ByteProgressTracker(total_download_bytes)
+    if downloads:
+        download_progress.emit(progress, 0, total_download_bytes, "Download pack files")
+    for rel, item, target, stat_key in downloads:
+        url = absolute_url(server_url, item["url"])
+        download_file(
+            url,
+            target,
+            item["sha256"],
+            status,
+            progress,
+            progress_tracker=download_progress,
+            progress_label=f"Download {rel}",
+        )
+        stats[stat_key] += 1
 
     stats["removed"] = cleanup_extra_files(game_dir, set(wanted), rules, status)
 
@@ -205,20 +476,16 @@ def install_mod_loader(
     loader_id = profile["mod_loader"].lower()
     minecraft_version = profile["minecraft_version"]
     loader_version = profile["loader_version"]
-    current_status = {"text": "", "max": 0}
+    install_progress = MinecraftInstallProgress(status, progress)
 
     def set_status(text: str) -> None:
-        current_status["text"] = text
-        status(text)
+        install_progress.set_status(text)
 
     def set_max(value: int) -> None:
-        current_status["max"] = value
-        if progress:
-            progress(0, value, current_status["text"])
+        install_progress.set_max(value)
 
     def set_progress(value: int) -> None:
-        if progress:
-            progress(value, int(current_status["max"] or 0), current_status["text"])
+        install_progress.set_progress(value)
 
     callback = {"setStatus": set_status, "setMax": set_max, "setProgress": set_progress}
     installed_version = installed_version_id(profile)
@@ -228,17 +495,19 @@ def install_mod_loader(
 
     if loader_id in {"vanilla", "minecraft", "none"}:
         status(f"Install Minecraft {minecraft_version}")
-        minecraft_launcher_lib.install.install_minecraft_version(minecraft_version, str(game_dir), callback=callback)
+        with track_streamed_request_bytes(install_progress.add_downloaded_bytes):
+            minecraft_launcher_lib.install.install_minecraft_version(minecraft_version, str(game_dir), callback=callback)
         return minecraft_version
 
     status(f"Install {loader_id} {loader_version} for Minecraft {minecraft_version}")
     mod_loader = minecraft_launcher_lib.mod_loader.get_mod_loader(loader_id)
-    return mod_loader.install(
-        minecraft_version,
-        str(game_dir),
-        loader_version=loader_version,
-        callback=callback,
-    )
+    with track_streamed_request_bytes(install_progress.add_downloaded_bytes):
+        return mod_loader.install(
+            minecraft_version,
+            str(game_dir),
+            loader_version=loader_version,
+            callback=callback,
+        )
 
 
 def ram_jvm_arguments(ram_mb: int | None) -> list[str]:

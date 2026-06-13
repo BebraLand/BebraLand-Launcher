@@ -10,14 +10,17 @@ from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSpinBox,
     QTextEdit,
@@ -138,6 +141,8 @@ class LauncherWindow(QWidget):
         self.auth_user: dict[str, Any] | None = self.settings.get("user")
         self.minecraft_profile: dict[str, Any] | None = self.settings.get("minecraft_profile")
         self.profiles: list[dict[str, Any]] = []
+        self.optional_mod_checkboxes: dict[str, QCheckBox] = {}
+        self.updating_optional_mods = False
         self.max_ram_mb = launcher_ram_limit_mb()
 
         self.bridge = Bridge()
@@ -230,6 +235,27 @@ class LauncherWindow(QWidget):
         self.ram_hint.setWordWrap(True)
         ram_row.addWidget(self.ram_hint)
         root.addLayout(ram_row)
+
+        self.optional_group = QGroupBox("Optional mods")
+        optional_group_layout = QVBoxLayout(self.optional_group)
+        optional_group_layout.setContentsMargins(8, 8, 8, 8)
+        optional_group_layout.setSpacing(6)
+        self.optional_scroll = QScrollArea()
+        self.optional_scroll.setWidgetResizable(True)
+        self.optional_scroll.setMaximumHeight(150)
+        self.optional_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.optional_content = QWidget()
+        self.optional_mods_layout = QVBoxLayout(self.optional_content)
+        self.optional_mods_layout.setContentsMargins(0, 0, 0, 0)
+        self.optional_mods_layout.setSpacing(4)
+        self.optional_scroll.setWidget(self.optional_content)
+        optional_group_layout.addWidget(self.optional_scroll)
+        self.optional_hint = QLabel("")
+        self.optional_hint.setWordWrap(True)
+        self.optional_hint.setStyleSheet("color: #4b5563;")
+        optional_group_layout.addWidget(self.optional_hint)
+        self.optional_group.setVisible(False)
+        root.addWidget(self.optional_group)
 
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
@@ -350,6 +376,194 @@ class LauncherWindow(QWidget):
             self.settings["profile_ram_mb"] = overrides
         return overrides
 
+    def optional_mod_settings(self) -> dict[str, Any]:
+        settings = self.settings.get("profile_optional_mods")
+        if not isinstance(settings, dict):
+            settings = {}
+            self.settings["profile_optional_mods"] = settings
+        return settings
+
+    def optional_mods_for_profile(self, profile: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        profile = profile or self.selected_profile()
+        if not profile:
+            return []
+        mods = profile.get("optional_mods") or []
+        return mods if isinstance(mods, list) else []
+
+    @staticmethod
+    def optional_mod_id(mod: dict[str, Any]) -> str:
+        return str(mod.get("id") or "").strip()
+
+    @staticmethod
+    def optional_mod_name(mod: dict[str, Any]) -> str:
+        return str(mod.get("name") or mod.get("id") or "").strip()
+
+    @staticmethod
+    def optional_mod_default_enabled(mod: dict[str, Any]) -> bool:
+        return bool(mod.get("default_enabled"))
+
+    def resolve_optional_mod_ids(self, mods: list[dict[str, Any]], selected: set[str]) -> set[str]:
+        mod_map = {self.optional_mod_id(mod): mod for mod in mods if self.optional_mod_id(mod)}
+        resolved = {mod_id for mod_id in selected if mod_id in mod_map}
+
+        changed = True
+        while changed:
+            changed = False
+            for mod_id in list(resolved):
+                for required_id in mod_map[mod_id].get("requires") or []:
+                    required_id = str(required_id)
+                    if required_id in mod_map and required_id not in resolved:
+                        resolved.add(required_id)
+                        changed = True
+
+        for mod_id in list(resolved):
+            for conflict_id in mod_map[mod_id].get("conflicts") or []:
+                conflict_id = str(conflict_id)
+                if conflict_id in resolved:
+                    resolved.discard(conflict_id)
+        return resolved
+
+    def remove_optional_mod_with_dependents(
+        self,
+        mods: list[dict[str, Any]],
+        selected: set[str],
+        disabled_id: str,
+    ) -> set[str]:
+        mod_map = {self.optional_mod_id(mod): mod for mod in mods if self.optional_mod_id(mod)}
+        removed = {disabled_id}
+        changed = True
+        while changed:
+            changed = False
+            for mod_id in list(selected - removed):
+                requires = {str(item) for item in mod_map.get(mod_id, {}).get("requires") or []}
+                if requires & removed:
+                    removed.add(mod_id)
+                    changed = True
+        return {mod_id for mod_id in selected if mod_id not in removed}
+
+    def optional_conflict_ids(self, mods: list[dict[str, Any]], mod_id: str) -> set[str]:
+        conflicts: set[str] = set()
+        for mod in mods:
+            item_id = self.optional_mod_id(mod)
+            item_conflicts = {str(item) for item in mod.get("conflicts") or []}
+            if item_id == mod_id:
+                conflicts |= item_conflicts
+            elif mod_id in item_conflicts:
+                conflicts.add(item_id)
+        return conflicts
+
+    def selected_optional_mod_ids(self, profile: dict[str, Any] | None = None) -> set[str]:
+        profile = profile or self.selected_profile()
+        if not profile:
+            return set()
+        slug = str(profile.get("slug") or "")
+        overrides = self.optional_mod_settings().get(slug)
+        if not isinstance(overrides, dict):
+            overrides = {}
+        selected: set[str] = set()
+        mods = self.optional_mods_for_profile(profile)
+        for mod in mods:
+            mod_id = self.optional_mod_id(mod)
+            if not mod_id:
+                continue
+            enabled = overrides.get(mod_id, self.optional_mod_default_enabled(mod))
+            if bool(enabled):
+                selected.add(mod_id)
+        return self.resolve_optional_mod_ids(mods, selected)
+
+    def save_optional_mod_selection(self, profile: dict[str, Any], selected: set[str]) -> None:
+        slug = str(profile.get("slug") or "")
+        if not slug:
+            return
+        mods = self.optional_mods_for_profile(profile)
+        self.optional_mod_settings()[slug] = {
+            self.optional_mod_id(mod): self.optional_mod_id(mod) in selected
+            for mod in mods
+            if self.optional_mod_id(mod)
+        }
+        save_settings(self.settings)
+
+    def clear_optional_mod_controls(self) -> None:
+        while self.optional_mods_layout.count():
+            item = self.optional_mods_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        self.optional_mod_checkboxes.clear()
+
+    def update_optional_mod_controls(self) -> None:
+        profile = self.selected_profile()
+        mods = self.optional_mods_for_profile(profile)
+        self.updating_optional_mods = True
+        self.clear_optional_mod_controls()
+        if not profile or not mods:
+            self.optional_group.setVisible(False)
+            self.optional_hint.clear()
+            self.updating_optional_mods = False
+            return
+
+        selected = self.selected_optional_mod_ids(profile)
+        name_by_id = {self.optional_mod_id(mod): self.optional_mod_name(mod) for mod in mods}
+        for mod in mods:
+            mod_id = self.optional_mod_id(mod)
+            if not mod_id:
+                continue
+            row = QWidget()
+            layout = QHBoxLayout(row)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(8)
+            checkbox = QCheckBox(self.optional_mod_name(mod))
+            checkbox.setChecked(mod_id in selected)
+            checkbox.toggled.connect(lambda checked, item_id=mod_id: self.optional_mod_toggled(item_id, checked))
+            layout.addWidget(checkbox)
+
+            details: list[str] = ["default on" if self.optional_mod_default_enabled(mod) else "default off"]
+            requires = [name_by_id.get(str(item), str(item)) for item in mod.get("requires") or []]
+            conflicts = [name_by_id.get(str(item), str(item)) for item in mod.get("conflicts") or []]
+            if requires:
+                details.append(f"requires: {', '.join(requires)}")
+            if conflicts:
+                details.append(f"conflicts: {', '.join(conflicts)}")
+            description = str(mod.get("description") or "").strip()
+            if description:
+                details.append(description)
+            detail_label = QLabel(" | ".join(details))
+            detail_label.setWordWrap(True)
+            detail_label.setStyleSheet("color: #4b5563;")
+            layout.addWidget(detail_label, 1)
+
+            tooltip = "\n".join(part for part in details if part)
+            row.setToolTip(tooltip)
+            checkbox.setToolTip(tooltip)
+            self.optional_mods_layout.addWidget(row)
+            self.optional_mod_checkboxes[mod_id] = checkbox
+
+        self.optional_mods_layout.addStretch(1)
+        self.optional_hint.setText(f"Enabled: {len(selected)} / {len(mods)}")
+        self.optional_group.setVisible(True)
+        self.updating_optional_mods = False
+
+    def optional_mod_toggled(self, mod_id: str, checked: bool) -> None:
+        if self.updating_optional_mods:
+            return
+        profile = self.selected_profile()
+        if not profile:
+            return
+        mods = self.optional_mods_for_profile(profile)
+        selected = {
+            item_id
+            for item_id, checkbox in self.optional_mod_checkboxes.items()
+            if checkbox.isChecked()
+        }
+        if checked:
+            selected -= self.optional_conflict_ids(mods, mod_id)
+            selected.add(mod_id)
+            selected = self.resolve_optional_mod_ids(mods, selected)
+        else:
+            selected = self.remove_optional_mod_with_dependents(mods, selected, mod_id)
+        self.save_optional_mod_selection(profile, selected)
+        self.update_optional_mod_controls()
+
     def profile_ram_value(self, profile: dict[str, Any]) -> int:
         overrides = self.ram_overrides()
         return clamp_ram_mb(overrides.get(profile["slug"], profile.get("recommended_ram_mb")), self.max_ram_mb)
@@ -404,6 +618,7 @@ class LauncherWindow(QWidget):
             self.settings["selected_profile"] = slug
             save_settings(self.settings)
         self.update_ram_controls()
+        self.update_optional_mod_controls()
 
     def refresh_profiles(self) -> None:
         self.reset_client()
@@ -431,6 +646,7 @@ class LauncherWindow(QWidget):
             if index >= 0:
                 self.profile_combo.setCurrentIndex(index)
         self.update_ram_controls()
+        self.update_optional_mod_controls()
         self.log_line(f"Profiles: {len(profiles)}")
 
     def set_auth(self, payload: dict[str, Any]) -> None:
@@ -517,13 +733,20 @@ class LauncherWindow(QWidget):
             if answer != QMessageBox.StandardButton.Yes:
                 return
         self.reset_client()
+        selected_optional_mod_ids = self.selected_optional_mod_ids(profile)
 
         def task() -> None:
             self.bridge.log.emit(f"Fetch manifest {slug}")
             manifest = self.client.latest_manifest(slug)
             game_dir = instance_dir(manifest["profile"]["slug"])
             installed_version = install_mod_loader(manifest, game_dir, self.bridge.log.emit, self.bridge.progress.emit)
-            game_dir = sync_manifest(manifest, self.client.server_url, self.bridge.log.emit, self.bridge.progress.emit)
+            game_dir = sync_manifest(
+                manifest,
+                self.client.server_url,
+                self.bridge.log.emit,
+                self.bridge.progress.emit,
+                selected_optional_mod_ids=selected_optional_mod_ids,
+            )
             username = (self.auth_user or {}).get("display_name") or "BebraPlayer"
             launch_minecraft(
                 manifest,
@@ -561,13 +784,24 @@ class LauncherWindow(QWidget):
         if answer != QMessageBox.StandardButton.Yes:
             return
         self.reset_client()
+        selected_optional_mod_ids = self.selected_optional_mod_ids(profile)
 
         def task() -> None:
             self.bridge.log.emit(f"Fetch manifest {slug}")
             manifest = self.client.latest_manifest(slug)
-            game_dir = prepare_reinstall(manifest, self.bridge.log.emit)
+            game_dir = prepare_reinstall(
+                manifest,
+                self.bridge.log.emit,
+                selected_optional_mod_ids=selected_optional_mod_ids,
+            )
             install_mod_loader(manifest, game_dir, self.bridge.log.emit, self.bridge.progress.emit)
-            sync_manifest(manifest, self.client.server_url, self.bridge.log.emit, self.bridge.progress.emit)
+            sync_manifest(
+                manifest,
+                self.client.server_url,
+                self.bridge.log.emit,
+                self.bridge.progress.emit,
+                selected_optional_mod_ids=selected_optional_mod_ids,
+            )
             self.bridge.log.emit(f"Reinstalled {slug}")
 
         self.run_bg(task)

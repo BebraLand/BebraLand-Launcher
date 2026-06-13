@@ -46,6 +46,8 @@ Launcher saves settings, per-profile RAM overrides, and Azuriom token in `%APPDA
 
 Backend sends `recommended_ram_mb` for each profile. Launcher uses that value by default, lets player change it with the RAM slider, and warns before launch if selected RAM is below recommended.
 
+Backend can also send `optional_mods` for each profile. Launcher shows them as checkboxes, saves choices per profile in settings, applies defaults for new players, auto-enables `requires`, disables dependents when a required mod is turned off, and syncs only selected optional files. Disabled optional files are removed on next sync unless that optional mod has `keep_on_disable: true`.
+
 ## Build EXE
 
 Windows:

@@ -336,6 +336,28 @@ def sync_mode_for(path: str, rules: dict[str, Any]) -> str:
     return "enforce"
 
 
+def selected_manifest_files(
+    manifest: dict[str, Any],
+    selected_optional_mod_ids: set[str] | None = None,
+) -> tuple[list[dict[str, Any]], set[str]]:
+    files = list(manifest.get("files") or [])
+    if selected_optional_mod_ids is None:
+        return files, set()
+
+    selected = {str(mod_id) for mod_id in selected_optional_mod_ids}
+    included: list[dict[str, Any]] = []
+    disabled_removable: set[str] = set()
+    for item in files:
+        rel = str(item.get("path") or "").replace("\\", "/")
+        optional_mod = str(item.get("optional_mod") or "")
+        if optional_mod and optional_mod not in selected:
+            if rel and not item.get("optional_keep_on_disable"):
+                disabled_removable.add(rel)
+            continue
+        included.append(item)
+    return included, disabled_removable
+
+
 def instances_root() -> Path:
     path = launcher_data_dir() / "instances"
     path.mkdir(parents=True, exist_ok=True)
@@ -430,20 +452,31 @@ def delete_instance(slug: str, status: Status) -> None:
     status(f"Deleted local pack: {slug}")
 
 
-def prepare_reinstall(manifest: dict[str, Any], status: Status) -> Path:
+def prepare_reinstall(
+    manifest: dict[str, Any],
+    status: Status,
+    selected_optional_mod_ids: set[str] | None = None,
+) -> Path:
     profile = manifest["profile"]
     game_dir = instance_dir(profile["slug"])
     rules = manifest.get("rules") or {}
+    manifest_files, disabled_optional = selected_manifest_files(manifest, selected_optional_mod_ids)
     removed = 0
 
     status(f"Clean Minecraft runtime for {profile['slug']}")
     for name in REINSTALL_SYSTEM_PATHS:
         removed += remove_local_path(game_dir / name)
 
-    for item in manifest.get("files", []):
+    for item in manifest_files:
         rel = str(item["path"]).replace("\\", "/")
         mode = item.get("mode") or sync_mode_for(rel, rules)
         if mode == "seed" or is_system_protected(rel):
+            continue
+        target = local_instance_path(game_dir, rel)
+        removed += remove_local_path(target)
+        remove_empty_parents(target, game_dir)
+    for rel in disabled_optional:
+        if is_system_protected(rel):
             continue
         target = local_instance_path(game_dir, rel)
         removed += remove_local_path(target)
@@ -499,13 +532,20 @@ def cleanup_extra_files(
     wanted: set[str],
     rules: dict[str, Any],
     status: Status,
+    force_remove: set[str] | None = None,
 ) -> int:
     removed = 0
+    force_remove = force_remove or set()
     for item in sorted(game_dir.rglob("*")):
         if item.is_dir():
             continue
         rel = item.relative_to(game_dir).as_posix()
         if rel in wanted or is_system_protected(rel):
+            continue
+        if rel in force_remove:
+            status(f"Remove disabled optional {rel}")
+            item.unlink()
+            removed += 1
             continue
         if sync_mode_for(rel, rules) == "seed":
             continue
@@ -520,10 +560,12 @@ def sync_manifest(
     server_url: str,
     status: Status,
     progress: Progress | None = None,
+    selected_optional_mod_ids: set[str] | None = None,
 ) -> Path:
     profile = manifest["profile"]
     game_dir = instance_dir(profile["slug"])
-    wanted = {str(item["path"]).replace("\\", "/"): item for item in manifest["files"]}
+    manifest_files, disabled_optional = selected_manifest_files(manifest, selected_optional_mod_ids)
+    wanted = {str(item["path"]).replace("\\", "/"): item for item in manifest_files}
     rules = manifest.get("rules") or {}
     stats = {"checked": len(wanted), "downloaded": 0, "updated": 0, "seeded": 0, "kept": 0, "removed": 0}
     downloads: list[tuple[str, dict[str, Any], Path, str]] = []
@@ -561,9 +603,12 @@ def sync_manifest(
         )
         stats[stat_key] += 1
 
-    stats["removed"] = cleanup_extra_files(game_dir, set(wanted), rules, status)
+    stats["removed"] = cleanup_extra_files(game_dir, set(wanted), rules, status, disabled_optional)
 
-    write_manifest(game_dir, manifest)
+    saved_manifest = dict(manifest)
+    if selected_optional_mod_ids is not None:
+        saved_manifest["selected_optional_mods"] = sorted(str(mod_id) for mod_id in selected_optional_mod_ids)
+    write_manifest(game_dir, saved_manifest)
     status(
         "Sync done: "
         f"checked={stats['checked']} downloaded={stats['downloaded']} updated={stats['updated']} "

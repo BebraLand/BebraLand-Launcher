@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -128,30 +129,49 @@ class ByteProgressTracker:
     def __init__(self, total_bytes: int) -> None:
         self.total_bytes = max(0, total_bytes)
         self.completed_bytes = 0
+        self.active_bytes: dict[str, int] = {}
         self.rate = RateMeter()
+        self.lock = threading.Lock()
 
-    def emit(self, progress: Progress | None, file_done: int, file_total: int, label: str) -> None:
+    def emit(
+        self,
+        progress: Progress | None,
+        file_done: int,
+        file_total: int,
+        label: str,
+        file_key: str | None = None,
+    ) -> None:
         if not progress:
             return
-        done = self.completed_bytes + max(0, file_done)
-        maximum = self.total_bytes or self.completed_bytes + max(0, file_total)
-        self.rate.update(done)
+        with self.lock:
+            if file_key:
+                self.active_bytes[file_key] = max(0, file_done)
+                active_total = sum(self.active_bytes.values())
+            else:
+                active_total = max(0, file_done)
+            done = self.completed_bytes + active_total
+            maximum = self.total_bytes or self.completed_bytes + max(0, file_total)
+            self.rate.update(done)
+            speed = self.rate.speed
         parts = [label]
         if maximum > 0:
             parts.append(f"{format_bytes(done)} / {format_bytes(maximum)}")
         else:
             parts.append(format_bytes(done))
-        if self.rate.speed > 0:
-            parts.append(f"{format_bytes(self.rate.speed)}/s")
-            eta = format_eta(maximum - done, self.rate.speed) if maximum > 0 else None
+        if speed > 0:
+            parts.append(f"{format_bytes(speed)}/s")
+            eta = format_eta(maximum - done, speed) if maximum > 0 else None
             if eta:
                 parts.append(eta)
         value, max_value = scaled_progress(done, maximum)
         progress(value, max_value, " - ".join(parts))
 
-    def finish_file(self, downloaded_bytes: int) -> None:
-        self.completed_bytes += max(0, downloaded_bytes)
-        self.rate.update(self.completed_bytes)
+    def finish_file(self, downloaded_bytes: int, file_key: str | None = None) -> None:
+        with self.lock:
+            if file_key:
+                self.active_bytes.pop(file_key, None)
+            self.completed_bytes += max(0, downloaded_bytes)
+            self.rate.update(self.completed_bytes + sum(self.active_bytes.values()))
 
 
 class CountingRaw:
@@ -496,6 +516,7 @@ def download_file(
     progress: Progress | None = None,
     progress_tracker: ByteProgressTracker | None = None,
     progress_label: str | None = None,
+    progress_key: str | None = None,
 ) -> None:
     tmp = dest.with_suffix(dest.suffix + ".part")
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -507,14 +528,14 @@ def download_file(
         total = int(response.headers.get("content-length") or 0)
         done = 0
         if progress_tracker:
-            progress_tracker.emit(progress, done, total, label)
+            progress_tracker.emit(progress, done, total, label, progress_key)
         with tmp.open("wb") as handle:
             for chunk in response.iter_content(chunk_size=1024 * 512):
                 if chunk:
                     handle.write(chunk)
                     done += len(chunk)
                     if progress_tracker:
-                        progress_tracker.emit(progress, done, total, label)
+                        progress_tracker.emit(progress, done, total, label, progress_key)
                     elif progress and total:
                         detail = f"{label} - {format_bytes(done)} / {format_bytes(total)}"
                         progress(done, total, detail)
@@ -524,7 +545,7 @@ def download_file(
         raise ValueError(f"Hash mismatch for {dest}: {actual} != {expected_sha256}")
     tmp.replace(dest)
     if progress_tracker:
-        progress_tracker.finish_file(done)
+        progress_tracker.finish_file(done, progress_key)
 
 
 def cleanup_extra_files(
@@ -590,7 +611,9 @@ def sync_manifest(
     download_progress = ByteProgressTracker(total_download_bytes)
     if downloads:
         download_progress.emit(progress, 0, total_download_bytes, "Download pack files")
-    for rel, item, target, stat_key in downloads:
+
+    def fetch_pack_file(download: tuple[str, dict[str, Any], Path, str]) -> tuple[str, str]:
+        rel, item, target, stat_key = download
         url = absolute_url(server_url, item["url"])
         download_file(
             url,
@@ -600,8 +623,21 @@ def sync_manifest(
             progress,
             progress_tracker=download_progress,
             progress_label=f"Download {rel}",
+            progress_key=rel,
         )
+        return rel, stat_key
+
+    if len(downloads) == 1:
+        _, stat_key = fetch_pack_file(downloads[0])
         stats[stat_key] += 1
+    elif downloads:
+        worker_count = min(8, len(downloads))
+        status(f"Download pack files with {worker_count} workers")
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = [executor.submit(fetch_pack_file, download) for download in downloads]
+            for future in as_completed(futures):
+                _, stat_key = future.result()
+                stats[stat_key] += 1
 
     stats["removed"] = cleanup_extra_files(game_dir, set(wanted), rules, status, disabled_optional)
 

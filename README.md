@@ -42,13 +42,17 @@ Sync modes:
 
 Frontend always protects local user data folders/files from pack cleanup: saves, screenshots, resource packs, shader packs, logs/crash reports, replay recordings, options, and server list.
 
-Launcher saves settings, per-profile RAM overrides, and Azuriom token in `%APPDATA%\BebraLandLauncher\settings.json`. Instance files live in `%APPDATA%\BebraLandLauncher\instances\<profile-slug>`.
+Launcher saves settings, per-profile RAM overrides, Azuriom token, instances, and authlib cache in the native user data folder:
+
+- Windows: `%APPDATA%\BebraLandLauncher`
+- macOS: `~/Library/Application Support/BebraLandLauncher`
+- Linux: `$XDG_DATA_HOME/BebraLandLauncher` or `~/.local/share/BebraLandLauncher`
 
 Backend sends `recommended_ram_mb` for each profile. Launcher uses that value by default, lets player change it with the RAM slider, and warns before launch if selected RAM is below recommended.
 
 Backend can also send `optional_mods` for each profile. Launcher shows them as checkboxes, saves choices per profile in settings, applies defaults for new players, auto-enables `requires`, disables dependents when a required mod is turned off, and syncs only selected optional files. Disabled optional files are removed on next sync unless that optional mod has `keep_on_disable: true`.
 
-## Build EXE
+## Build launcher
 
 Windows:
 
@@ -70,8 +74,12 @@ Old PowerShell helper still works:
 
 Output:
 
-- `dist\BebraLandLauncher.exe`
-- `dist\BebraLandUpdater.exe`
+- Windows: `dist\BebraLandLauncher.exe`, `dist\BebraLandUpdater.exe`
+- macOS/Linux: `dist/BebraLandLauncher`, `dist/BebraLandUpdater`
+
+PyInstaller builds for the OS and CPU it runs on. Build Windows on Windows, macOS on macOS, and Linux on Linux.
+
+Windows 32-bit note: current PySide6 wheels in this project support Windows x64/ARM64, not win32. A single Windows x64 EXE will not run on 32-bit Windows, and building a 32-bit fallback would require changing the GUI stack or pinning old dependencies. For the launcher and modern modded Minecraft, Windows x64 is the practical target.
 
 ## Build setup.exe
 
@@ -87,26 +95,28 @@ The installer defaults to `%LOCALAPPDATA%\Programs\BebraLand Launcher`, lets the
 
 ## Update flow
 
-Release builds ship two one-file Windows EXEs: `BebraLandLauncher.exe` and `BebraLandUpdater.exe`. The installer puts both in the selected install folder.
+Release builds ship one launcher and one updater per platform. Windows also ships an Inno Setup installer.
 
-On start launcher downloads `latest.json` from GitHub Releases:
+On start launcher downloads its platform manifest from GitHub Releases:
 
 ```json
 {
   "version": "0.2.0",
-  "platform": "windows",
-  "url": "https://github.com/OWNER/REPO/releases/download/v0.2.0/BebraLandLauncher.exe",
+  "platform": "windows-x64",
+  "url": "https://github.com/OWNER/REPO/releases/download/v0.2.0/BebraLandLauncher-windows-x64.exe",
   "sha256": "..."
 }
 ```
 
-If `version` is newer than the bundled launcher version, the launcher updates automatically, downloads the new EXE into `%APPDATA%\BebraLandLauncher\updates`, verifies `sha256`, then starts `BebraLandUpdater.exe` from the install folder:
+Platform IDs are `windows-x64`, `linux-x64`, `macos-arm64`, and `macos-x64` in the default GitHub workflow.
+
+If `version` is newer than the bundled launcher version, the launcher updates automatically, downloads the new binary into the user data `updates` folder, verifies `sha256`, then starts the installed updater from the install folder:
 
 ```text
-BebraLandUpdater.exe --install-update --source <downloaded-exe> --target <old-exe> --pid <old-pid>
+BebraLandUpdater[.exe] --install-update --source <downloaded-binary> --target <old-binary> --pid <old-pid>
 ```
 
-The updater waits for the old launcher to exit, copies the downloaded launcher over the old path through a temporary `.new` file, removes that temporary file on failure, and starts the updated launcher. It does not leave a `.bak` file. If `BebraLandUpdater.exe` is missing, the downloaded launcher can still run the old `--apply-update` helper mode as fallback. The normal launcher cleans `%APPDATA%\BebraLandLauncher\updates` on startup and before downloading another update.
+The updater waits for the old launcher to exit, copies the downloaded launcher over the old path through a temporary `.new` file, removes that temporary file on failure, and starts the updated launcher. It does not leave a `.bak` file. If the updater is missing, the downloaded launcher can still run the old `--apply-update` helper mode as fallback. The normal launcher cleans the user data `updates` folder on startup and before downloading another update.
 
 Dev builds have no update channel unless `BEBRALAND_UPDATE_MANIFEST_URL` is set. In dev mode, launcher downloads the update but does not replace itself.
 
@@ -126,22 +136,22 @@ Or run the `Release launcher` workflow manually and enter version like `0.2.0`.
 GitHub Actions should:
 
 1. install uv-managed Python 3.13;
-2. build `dist\BebraLandLauncher.exe` and `dist\BebraLandUpdater.exe`;
-3. create `dist\latest.json` with SHA256 for `BebraLandLauncher.exe`;
-4. build `dist\setup.exe`;
-5. publish `setup.exe`, `BebraLandLauncher.exe`, `BebraLandUpdater.exe`, and `latest.json` to GitHub Release.
+2. build Windows x64, Linux x64, macOS arm64, and macOS x64 launchers;
+3. create `latest-<platform>.json` with SHA256 for each platform launcher;
+4. build `setup-windows-x64.exe` for Windows;
+5. publish all launchers, updaters, manifests, and the Windows installer to GitHub Release.
 
-Players download `setup.exe` from the latest release. Future release builds auto-check:
+Players on Windows download `setup-windows-x64.exe` from the latest release. macOS/Linux players download their platform binary and keep the updater next to it. Future release builds auto-check:
 
 ```text
-https://github.com/<owner>/<repo>/releases/latest/download/latest.json
+https://github.com/<owner>/<repo>/releases/latest/download/latest-<platform>.json
 ```
 
 Local test build with update channel:
 
 ```powershell
 $env:BEBRALAND_BUILD_VERSION = "0.1.0"
-$env:BEBRALAND_UPDATE_MANIFEST_URL = "https://github.com/OWNER/REPO/releases/latest/download/latest.json"
+$env:BEBRALAND_UPDATE_MANIFEST_URL = "https://github.com/OWNER/REPO/releases/latest/download/latest-windows-x64.json"
 .\build_frontend.bat
 ```
 
@@ -152,7 +162,7 @@ Azuriom auth works through backend. Backend Azuriom URL lives in backend `.env` 
 Minecraft launch uses the verified Azuriom access token as the auth token and the backend-provided Minecraft profile as `username`/`uuid`. The launcher adds:
 
 ```text
--javaagent:%APPDATA%\BebraLandLauncher\authlib-injector\authlib-injector-<version>.jar=<server>/api/yggdrasil/
+-javaagent:<launcher-data-dir>/authlib-injector/authlib-injector-<version>.jar=<server>/api/yggdrasil/
 -Dauthlibinjector.yggdrasil.prefetched=<metadata>
 ```
 

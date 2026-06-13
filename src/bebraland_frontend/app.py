@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 
 from . import __version__
 from .api import ApiClient
-from .config import DEFAULT_SERVER_URL, update_manifest_url
+from .config import DEFAULT_SERVER_URL, platform_id, update_manifest_url
 from .runtime import (
     delete_instance,
     install_mod_loader,
@@ -844,7 +844,7 @@ class LauncherWindow(QWidget):
             return
 
         def task() -> None:
-            release = get_update_release(__version__, manifest_url, self.bridge.log.emit)
+            release = get_update_release(__version__, manifest_url, self.bridge.log.emit, platform_id())
             if not release:
                 return
             self.bridge.log.emit(f"Update available: {release['version']}")
@@ -861,7 +861,7 @@ class LauncherWindow(QWidget):
                 self.bridge.log.emit("Restart launcher to apply update")
                 self.bridge.replace_update.emit(downloaded)
             else:
-                self.bridge.log.emit("Run downloaded EXE manually in dev mode")
+                self.bridge.log.emit("Run downloaded launcher manually in dev mode")
 
         self.run_bg(task)
 

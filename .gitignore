@@ -5,6 +5,7 @@ dist*/
 build/
 *.spec
 !BebraLandLauncher.spec
+!BebraLandUpdater.spec
 __pycache__/
 *.pyc
 resources/*.exe

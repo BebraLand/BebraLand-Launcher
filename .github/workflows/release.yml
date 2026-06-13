@@ -18,31 +18,55 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+
+    steps:
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+          fi
+          version="${version#v}"
+          if [ -z "$version" ]; then
+            echo "Release version is empty" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
   build:
-    runs-on: windows-2025
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            os: windows-2025
+          - platform: linux-x64
+            os: ubuntu-24.04
+          - platform: macos-arm64
+            os: macos-15
+          - platform: macos-x64
+            os: macos-15-intel
+
+    runs-on: ${{ matrix.os }}
+    env:
+      APP_VERSION: ${{ needs.resolve.outputs.version }}
+      RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+      BEBRALAND_BUILD_VERSION: ${{ needs.resolve.outputs.version }}
+      BEBRALAND_RELEASE_PLATFORM: ${{ matrix.platform }}
+      BEBRALAND_UPDATE_MANIFEST_URL: https://github.com/${{ github.repository }}/releases/latest/download/latest-${{ matrix.platform }}.json
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Resolve release version
-        shell: pwsh
-        run: |
-          $version = "${{ github.ref_name }}"
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $version = "${{ inputs.version }}"
-          }
-          $version = $version.Trim()
-          if ($version.StartsWith("v")) {
-            $version = $version.Substring(1)
-          }
-          if (-not $version) {
-            throw "Release version is empty"
-          }
-          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "RELEASE_TAG=v$version" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "BEBRALAND_BUILD_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "BEBRALAND_UPDATE_MANIFEST_URL=https://github.com/${{ github.repository }}/releases/latest/download/latest.json" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
@@ -50,24 +74,55 @@ jobs:
           enable-cache: true
 
       - name: Setup Inno Setup
+        if: runner.os == 'Windows'
         shell: pwsh
         run: choco install innosetup --no-progress -y
 
-      - name: Build EXE
+      - name: Build Windows launcher
+        if: runner.os == 'Windows'
         shell: cmd
         run: build_frontend.bat
 
-      - name: Create update manifest
+      - name: Build Unix launcher
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          chmod +x build_frontend.sh
+          ./build_frontend.sh
+
+      - name: Stage Windows artifacts
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Copy-Item "dist\BebraLandLauncher.exe" "release\BebraLandLauncher-${env:BEBRALAND_RELEASE_PLATFORM}.exe"
+          Copy-Item "dist\BebraLandUpdater.exe" "release\BebraLandUpdater-${env:BEBRALAND_RELEASE_PLATFORM}.exe"
           uv run python scripts\make_release_manifest.py `
             --version "$env:APP_VERSION" `
             --repo "${{ github.repository }}" `
             --tag "$env:RELEASE_TAG" `
-            --exe "dist\BebraLandLauncher.exe" `
-            --output "dist\latest.json"
+            --platform "$env:BEBRALAND_RELEASE_PLATFORM" `
+            --artifact "release\BebraLandLauncher-${env:BEBRALAND_RELEASE_PLATFORM}.exe" `
+            --output "release\latest-${env:BEBRALAND_RELEASE_PLATFORM}.json"
 
-      - name: Build setup.exe
+      - name: Stage Unix artifacts
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p release
+          cp dist/BebraLandLauncher "release/BebraLandLauncher-${BEBRALAND_RELEASE_PLATFORM}"
+          cp dist/BebraLandUpdater "release/BebraLandUpdater-${BEBRALAND_RELEASE_PLATFORM}"
+          chmod +x "release/BebraLandLauncher-${BEBRALAND_RELEASE_PLATFORM}" "release/BebraLandUpdater-${BEBRALAND_RELEASE_PLATFORM}"
+          uv run python scripts/make_release_manifest.py \
+            --version "$APP_VERSION" \
+            --repo "${{ github.repository }}" \
+            --tag "$RELEASE_TAG" \
+            --platform "$BEBRALAND_RELEASE_PLATFORM" \
+            --artifact "release/BebraLandLauncher-${BEBRALAND_RELEASE_PLATFORM}" \
+            --output "release/latest-${BEBRALAND_RELEASE_PLATFORM}.json"
+
+      - name: Build Windows setup.exe
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $iscc = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
@@ -76,14 +131,30 @@ jobs:
             throw "ISCC.exe not found: $isccPath"
           }
           & $isccPath "installer\BebraLandLauncher.iss"
+          Copy-Item "dist\setup.exe" "release\setup-windows-x64.exe"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: release/*
+
+  publish:
+    needs:
+      - resolve
+      - build
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: BebraLand Launcher ${{ env.APP_VERSION }}
-          files: |
-            dist/setup.exe
-            dist/BebraLandLauncher.exe
-            dist/BebraLandUpdater.exe
-            dist/latest.json
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          name: BebraLand Launcher ${{ needs.resolve.outputs.version }}
+          files: release-artifacts/*

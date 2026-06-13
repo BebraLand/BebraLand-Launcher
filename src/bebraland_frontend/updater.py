@@ -13,13 +13,13 @@ from typing import Any, Callable
 
 import requests
 
-from .config import launcher_data_dir
+from .config import launcher_binary_name, launcher_data_dir, platform_id, updater_binary_name
 
 
 Status = Callable[[str], None]
 UPDATE_HELPER_FLAG = "--apply-update"
 INSTALLED_UPDATER_FLAG = "--install-update"
-UPDATER_EXE_NAME = "BebraLandUpdater.exe"
+UPDATER_EXE_NAME = updater_binary_name()
 UPDATE_WAIT_SECONDS = 60
 
 
@@ -37,37 +37,97 @@ def is_newer_version(latest: str, current: str) -> bool:
     return latest_parts > current_parts
 
 
-def normalize_release(manifest: dict[str, Any]) -> dict[str, Any]:
+def platform_aliases(value: str | None = None) -> set[str]:
+    current = str(value or platform_id()).strip().lower()
+    aliases = {current}
+    if current == "windows":
+        aliases.add("windows-x64")
+    elif current == "linux":
+        aliases.add("linux-x64")
+    elif current == "macos":
+        aliases.update({"macos-arm64", "macos-x64", "darwin"})
+    elif current.startswith("windows-"):
+        aliases.add("windows")
+    elif current.startswith("macos-"):
+        aliases.update({"macos", "darwin"})
+    elif current.startswith("linux-"):
+        aliases.add("linux")
+    return aliases
+
+
+def release_matches_platform(release: dict[str, Any], current_platform: str) -> bool:
+    release_platform = str(release.get("platform") or "").strip().lower()
+    return not release_platform or release_platform in platform_aliases(current_platform)
+
+
+def select_platform_release(manifest: dict[str, Any], current_platform: str) -> dict[str, Any] | None:
+    releases = manifest.get("releases")
+    if isinstance(releases, dict):
+        aliases = [current_platform, *sorted(platform_aliases(current_platform) - {current_platform})]
+        for alias in aliases:
+            release = releases.get(alias)
+            if isinstance(release, dict):
+                selected = dict(release)
+                selected.setdefault("platform", alias)
+                return selected
+        return None
+    if isinstance(releases, list):
+        for release in releases:
+            if isinstance(release, dict) and release_matches_platform(release, current_platform):
+                return release
+        return None
+    if release_matches_platform(manifest, current_platform):
+        return manifest
+    return None
+
+
+def normalize_release(manifest: dict[str, Any], current_platform: str | None = None) -> dict[str, Any] | None:
+    current_platform = str(current_platform or platform_id()).strip().lower()
+    selected = select_platform_release(manifest, current_platform)
+    if selected is None:
+        return None
+
     version = str(manifest.get("version") or "").strip().lstrip("vV")
-    url = str(manifest.get("url") or manifest.get("download_url") or "").strip()
+    version = str(selected.get("version") or version).strip().lstrip("vV")
+    url = str(selected.get("url") or selected.get("download_url") or "").strip()
     if not version:
         raise ValueError("Update manifest has no version")
     if not url:
         raise ValueError("Update manifest has no download url")
     release: dict[str, Any] = {
         "version": version,
+        "platform": str(selected.get("platform") or current_platform).strip().lower() or current_platform,
         "url": url,
     }
-    sha256 = str(manifest.get("sha256") or "").strip()
+    sha256 = str(selected.get("sha256") or "").strip()
     if sha256:
         release["sha256"] = sha256
-    notes = str(manifest.get("notes") or "").strip()
+    notes = str(selected.get("notes") or manifest.get("notes") or "").strip()
     if notes:
         release["notes"] = notes
     return release
 
 
-def get_update_release(current_version: str, manifest_url: str, status: Status) -> dict[str, Any] | None:
+def get_update_release(
+    current_version: str,
+    manifest_url: str,
+    status: Status,
+    current_platform: str | None = None,
+) -> dict[str, Any] | None:
     manifest_url = manifest_url.strip()
     if not manifest_url:
         return None
+    current_platform = str(current_platform or platform_id()).strip().lower()
     status("Check launcher update")
     response = requests.get(manifest_url, timeout=20)
     response.raise_for_status()
     manifest = response.json()
     if not isinstance(manifest, dict):
         raise ValueError("Update manifest must be a JSON object")
-    release = normalize_release(manifest)
+    release = normalize_release(manifest, current_platform)
+    if release is None:
+        status(f"No launcher update for {current_platform}")
+        return None
     if not is_newer_version(release["version"], current_version):
         status("Launcher up to date")
         return None
@@ -86,7 +146,10 @@ def download_release(release: dict[str, Any], status: Status) -> Path:
     cleanup_update_cache()
     updates_dir = launcher_data_dir() / "updates"
     updates_dir.mkdir(parents=True, exist_ok=True)
-    filename = Path(str(release["url"]).split("?")[0]).name or f"BebraLandLauncher-{release['version']}.exe"
+    filename = Path(str(release["url"]).split("?")[0]).name
+    if not filename:
+        base = Path(launcher_binary_name())
+        filename = f"{base.stem}-{release['version']}-{release.get('platform') or platform_id()}{base.suffix}"
     target = updates_dir / filename
     tmp = target.with_suffix(target.suffix + ".part")
     status(f"Download launcher {release['version']}")
@@ -106,6 +169,8 @@ def download_release(release: dict[str, Any], status: Status) -> Path:
         if actual.lower() != expected.lower():
             tmp.unlink(missing_ok=True)
             raise ValueError(f"Update hash mismatch: {actual} != {expected}")
+    if os.name != "nt":
+        tmp.chmod(tmp.stat().st_mode | 0o755)
     tmp.replace(target)
     return target
 
@@ -137,7 +202,7 @@ def cleanup_update_cache(status: Status | None = None) -> None:
 
 
 def can_self_replace() -> bool:
-    return bool(getattr(sys, "frozen", False)) and os.name == "nt"
+    return bool(getattr(sys, "frozen", False))
 
 
 def detached_creationflags() -> int:
@@ -165,7 +230,7 @@ def installed_updater_path(current: Path) -> Path | None:
 
 def replace_current_exe(downloaded: Path) -> None:
     if not can_self_replace():
-        raise RuntimeError("Self-update works only for frozen Windows EXE")
+        raise RuntimeError("Self-update works only for frozen launcher builds")
 
     current = Path(sys.executable).resolve()
     downloaded = downloaded.resolve()

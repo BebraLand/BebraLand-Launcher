@@ -7,3 +7,5 @@ uv sync --extra build
 uv run python scripts\write_build_info.py
 uv run pyinstaller --noconfirm BebraLandLauncher.spec
 uv run pyinstaller --noconfirm BebraLandUpdater.spec
+Write-Host ""
+Write-Host "Done: $(Join-Path (Get-Location) 'dist')"

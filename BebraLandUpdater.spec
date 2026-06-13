@@ -33,11 +33,11 @@ def windows_ssl_binaries():
     return binaries
 
 a = Analysis(
-    ['launcher_gui.py'],
+    ["launcher_updater.py"],
     pathex=[],
     binaries=windows_ssl_binaries(),
     datas=[],
-    hiddenimports=['ssl', '_ssl', '_hashlib'],
+    hiddenimports=["ssl", "_ssl", "_hashlib"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -53,7 +53,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='BebraLandLauncher',
+    name="BebraLandUpdater",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

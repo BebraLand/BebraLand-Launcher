@@ -13,6 +13,8 @@ import uuid
 from typing import Any, Callable
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
+from .config import platform_id
+
 
 ProfilesCallback = Callable[[list[dict[str, Any]]], None]
 LogCallback = Callable[[str], None]
@@ -247,10 +249,10 @@ class ApiClient:
     def azuriom_verify(self, access_token: str) -> dict[str, Any]:
         return self._request("auth.azuriom.verify", {"access_token": access_token}, timeout=30)
 
-    def check_update(self, current_version: str, platform: str = "windows") -> dict[str, Any]:
+    def check_update(self, current_version: str, platform: str | None = None) -> dict[str, Any]:
         return self._request(
             "launcher.update",
-            {"current_version": current_version, "platform": platform},
+            {"current_version": current_version, "platform": platform or platform_id()},
             timeout=20,
         )
 

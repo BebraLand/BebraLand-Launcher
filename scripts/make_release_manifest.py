@@ -4,6 +4,8 @@ import argparse
 import hashlib
 import json
 import os
+import platform
+import sys
 from pathlib import Path
 
 
@@ -18,20 +20,52 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def normalized_machine() -> str:
+    machine = platform.machine().lower().replace(" ", "")
+    aliases = {
+        "amd64": "x64",
+        "x86_64": "x64",
+        "i386": "x86",
+        "i686": "x86",
+        "x86": "x86",
+        "aarch64": "arm64",
+        "arm64": "arm64",
+    }
+    return aliases.get(machine, machine or "unknown")
+
+
+def current_platform_id() -> str:
+    arch = normalized_machine()
+    if sys.platform.startswith("win"):
+        return f"windows-{arch}"
+    if sys.platform == "darwin":
+        return f"macos-{arch}"
+    if sys.platform.startswith("linux"):
+        return f"linux-{arch}"
+    return f"{sys.platform}-{arch}"
+
+
+def default_artifact(platform_id: str) -> Path:
+    suffix = ".exe" if platform_id.startswith("windows-") else ""
+    return ROOT / "dist" / f"BebraLandLauncher{suffix}"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", default=os.environ.get("BEBRALAND_BUILD_VERSION"), required=False)
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""))
     parser.add_argument("--tag", default="")
-    parser.add_argument("--exe", default=str(ROOT / "dist" / "BebraLandLauncher.exe"))
-    parser.add_argument("--output", default=str(ROOT / "dist" / "latest.json"))
+    parser.add_argument("--platform", default=os.environ.get("BEBRALAND_RELEASE_PLATFORM") or current_platform_id())
+    parser.add_argument("--artifact", "--exe", dest="artifact", default="")
+    parser.add_argument("--output", default="")
     parser.add_argument("--url", default="")
     parser.add_argument("--notes", default="")
     args = parser.parse_args()
 
-    exe = Path(args.exe).resolve()
-    if not exe.exists():
-        raise FileNotFoundError(exe)
+    release_platform = str(args.platform).strip().lower()
+    artifact = Path(args.artifact).resolve() if args.artifact else default_artifact(release_platform).resolve()
+    if not artifact.exists():
+        raise FileNotFoundError(artifact)
 
     version = (args.version or "").strip().lstrip("vV")
     if not version:
@@ -42,18 +76,18 @@ def main() -> None:
     if not url:
         if not args.repo:
             raise RuntimeError("Repo required. Pass --repo owner/name or --url.")
-        url = f"https://github.com/{args.repo}/releases/download/{tag}/{exe.name}"
+        url = f"https://github.com/{args.repo}/releases/download/{tag}/{artifact.name}"
 
     payload = {
         "version": version,
-        "platform": "windows",
+        "platform": release_platform,
         "url": url,
-        "sha256": sha256_file(exe),
+        "sha256": sha256_file(artifact),
     }
     if args.notes:
         payload["notes"] = args.notes
 
-    output = Path(args.output).resolve()
+    output = Path(args.output or ROOT / "dist" / f"latest-{release_platform}.json").resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(f"Wrote {output}: {url}")

@@ -14,6 +14,14 @@ uv run bebraland-launcher
 
 Default backend URL: `http://127.0.0.1:8765`.
 
+Local `.env` is supported in the frontend folder:
+
+```env
+BEBRALAND_SERVER_URL=http://192.168.0.116:8765
+```
+
+OS env still wins over `.env`. Release builds can bake the same value into the launcher by adding a GitHub Actions repository secret named `BEBRALAND_SERVER_URL`.
+
 ## Play flow
 
 When user clicks `Launch`:

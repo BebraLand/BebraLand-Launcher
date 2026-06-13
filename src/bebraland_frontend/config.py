@@ -11,7 +11,44 @@ except Exception:
     build_info = None
 
 
-DEFAULT_SERVER_URL = os.environ.get("BEBRALAND_SERVER_URL", "http://127.0.0.1:8765")
+def load_dotenv() -> None:
+    candidates = []
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).resolve().parent / ".env")
+    candidates.extend(
+        [
+            Path.cwd() / ".env",
+            Path(__file__).resolve().parents[2] / ".env",
+        ]
+    )
+    seen: set[Path] = set()
+    for dotenv_path in candidates:
+        try:
+            resolved = dotenv_path.resolve()
+        except OSError:
+            continue
+        if resolved in seen or not resolved.is_file():
+            continue
+        seen.add(resolved)
+        for raw_line in resolved.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            name, value = line.split("=", 1)
+            name = name.strip()
+            value = value.strip().strip('"').strip("'")
+            if name and name not in os.environ:
+                os.environ[name] = value
+
+
+load_dotenv()
+
+
+DEFAULT_SERVER_URL = (
+    os.environ.get("BEBRALAND_SERVER_URL")
+    or getattr(build_info, "SERVER_URL", "")
+    or "http://127.0.0.1:8765"
+).strip()
 DEFAULT_UPDATE_MANIFEST_URL = (
     os.environ.get("BEBRALAND_UPDATE_MANIFEST_URL")
     or getattr(build_info, "UPDATE_MANIFEST_URL", "")

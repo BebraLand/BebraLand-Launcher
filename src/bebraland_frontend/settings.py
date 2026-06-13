@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 from .config import DEFAULT_SERVER_URL, launcher_data_dir
+
+
+LEGACY_DEFAULT_SERVER_URL = "http://127.0.0.1:8765"
 
 
 def settings_path():
@@ -11,6 +15,7 @@ def settings_path():
 
 
 def load_settings() -> dict[str, Any]:
+    env_server_url = os.environ.get("BEBRALAND_SERVER_URL", "").strip()
     path = settings_path()
     if not path.exists():
         return {"server_url": DEFAULT_SERVER_URL}
@@ -20,7 +25,9 @@ def load_settings() -> dict[str, Any]:
         return {"server_url": DEFAULT_SERVER_URL}
     if not isinstance(data, dict):
         return {"server_url": DEFAULT_SERVER_URL}
-    data.setdefault("server_url", DEFAULT_SERVER_URL)
+    server_url = str(data.get("server_url") or "").strip()
+    if env_server_url or not server_url or server_url.rstrip("/") == LEGACY_DEFAULT_SERVER_URL:
+        data["server_url"] = DEFAULT_SERVER_URL
     return data
 
 

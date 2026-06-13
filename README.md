@@ -27,6 +27,8 @@ When user clicks `Launch`:
 
 Launcher keeps `/api/v1/ws` open while running. If backend shell/CLI creates, deletes, clones, edits RAM, or builds pack while server is running, backend pushes `profiles.changed` and the pack combo updates live.
 
+If backend changes a profile runtime with `profile runtime` / `profile hotswap` / `profile loader`, the launcher keeps the same local instance slug, installs the new Minecraft/modloader version from the next manifest, syncs changed pack files, and launches that new installed version.
+
 Pack controls:
 
 - `Reinstall`: downloads Minecraft runtime and managed pack files again, while keeping local user data like `saves`, `screenshots`, `resourcepacks`, `shaderpacks`, options, and server list.

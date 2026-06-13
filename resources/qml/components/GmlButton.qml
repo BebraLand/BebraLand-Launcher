@@ -21,6 +21,27 @@ Button {
 
     Theme { id: theme }
 
+    containmentMask: QtObject {
+        function contains(point) {
+            return root.roundedContains(point.x, point.y, root.width, root.height, root.radius)
+        }
+    }
+
+    function roundedContains(x, y, width, height, radius) {
+        if (x < 0 || y < 0 || x > width || y > height)
+            return false
+
+        var r = Math.max(0, Math.min(radius, width / 2, height / 2))
+        if (r === 0)
+            return true
+
+        var cx = Math.max(r, Math.min(x, width - r))
+        var cy = Math.max(r, Math.min(y, height - r))
+        var dx = x - cx
+        var dy = y - cy
+        return dx * dx + dy * dy <= r * r
+    }
+
     function baseColor() {
         if (!root.enabled)
             return theme.formHover

@@ -124,15 +124,34 @@ Item {
                     width: 156
                     height: 50
                     radius: 25
-                    color: theme.primary
+                    color: playMainMouse.containsMouse || playDropMouse.containsMouse ? theme.primaryHover : theme.primary
                     clip: true
+
+                    function roundedContains(x, y, width, height, radius) {
+                        if (x < 0 || y < 0 || x > width || y > height)
+                            return false
+
+                        var r = Math.max(0, Math.min(radius, width / 2, height / 2))
+                        if (r === 0)
+                            return true
+
+                        var cx = Math.max(r, Math.min(x, width - r))
+                        var cy = Math.max(r, Math.min(y, height - r))
+                        var dx = x - cx
+                        var dy = y - cy
+                        return dx * dx + dy * dy <= r * r
+                    }
+
+                    function containsPoint(point) {
+                        return roundedContains(point.x, point.y, width, height, radius)
+                    }
 
                     Rectangle {
                         anchors.left: parent.left
                         anchors.top: parent.top
                         anchors.bottom: parent.bottom
                         width: 112
-                        color: playMainMouse.containsMouse ? theme.primaryHover : theme.primary
+                        color: "transparent"
 
                         Row {
                             anchors.centerIn: parent
@@ -168,6 +187,12 @@ Item {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
+                            containmentMask: QtObject {
+                                function contains(point) {
+                                    var localPoint = playMainMouse.mapToItem(playSplit, point.x, point.y)
+                                    return playSplit.containsPoint(localPoint)
+                                }
+                            }
                             onClicked: controller.launchSelected()
                         }
                     }
@@ -184,7 +209,7 @@ Item {
                         anchors.top: parent.top
                         anchors.bottom: parent.bottom
                         width: 43
-                        color: playDropMouse.containsMouse ? theme.primaryHover : theme.primary
+                        color: "transparent"
 
                         Image {
                             anchors.centerIn: parent
@@ -199,6 +224,12 @@ Item {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
+                            containmentMask: QtObject {
+                                function contains(point) {
+                                    var localPoint = playDropMouse.mapToItem(playSplit, point.x, point.y)
+                                    return playSplit.containsPoint(localPoint)
+                                }
+                            }
                             onClicked: playMenu.open()
                         }
                     }

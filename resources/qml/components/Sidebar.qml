@@ -61,10 +61,24 @@ Item {
                     model: root.profiles()
 
                     delegate: Rectangle {
+                        id: profileButton
+
                         width: 50
                         height: 50
                         radius: 25
                         color: modelData.slug === root.state.selectedSlug ? theme.primary : "transparent"
+
+                        function roundedContains(x, y, width, height, radius) {
+                            if (x < 0 || y < 0 || x > width || y > height)
+                                return false
+
+                            var r = Math.max(0, Math.min(radius, width / 2, height / 2))
+                            var cx = Math.max(r, Math.min(x, width - r))
+                            var cy = Math.max(r, Math.min(y, height - r))
+                            var dx = x - cx
+                            var dy = y - cy
+                            return dx * dx + dy * dy <= r * r
+                        }
 
                         Image {
                             anchors.centerIn: parent
@@ -78,6 +92,11 @@ Item {
                         MouseArea {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
+                            containmentMask: QtObject {
+                                function contains(point) {
+                                    return profileButton.roundedContains(point.x, point.y, profileButton.width, profileButton.height, profileButton.radius)
+                                }
+                            }
                             onClicked: {
                                 controller.selectProfile(modelData.slug || "")
                                 root.pageRequested("home")

@@ -50,6 +50,8 @@ Launcher saves settings, per-profile RAM overrides, Azuriom token, instances, an
 
 Backend sends `recommended_ram_mb` for each profile. Launcher uses that value by default, lets player change it with the RAM slider, and warns before launch if selected RAM is below recommended.
 
+Backend can send `icon_url` and `background_url` for each profile. Launcher uses those assets for the profile rail, hero logo, and main background. If a profile has no background, launcher falls back to bundled `background_for_launcher.jpg`, also used by Settings and Account pages.
+
 Backend can also send `optional_mods` for each profile. Launcher shows them as checkboxes, saves choices per profile in settings, applies defaults for new players, auto-enables `requires`, disables dependents when a required mod is turned off, and syncs only selected optional files. Disabled optional files are removed on next sync unless that optional mod has `keep_on_disable: true`.
 
 ## Build launcher
@@ -183,6 +185,12 @@ Do not just mark an old GitHub Release as latest for rollback. Its `update_id` i
 ## Auth
 
 Azuriom auth works through backend. Backend Azuriom URL lives in backend `.env` as `AZURIOM_URL=...`.
+
+Account page supports Azuriom Skin API:
+
+- `Refresh`: loads current body preview from `/api/skin-api/avatars/body/<username>.png`.
+- `Upload skin`: sends a PNG skin through backend websocket to Azuriom Skin API.
+- `Upload cape`: sends a PNG cape through backend websocket to Azuriom Skin API, if capes are enabled in Azuriom.
 
 Minecraft launch uses the verified Azuriom access token as the auth token and the backend-provided Minecraft profile as `username`/`uuid`. The launcher adds:
 

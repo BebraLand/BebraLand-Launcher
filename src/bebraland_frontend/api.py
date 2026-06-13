@@ -249,6 +249,38 @@ class ApiClient:
     def azuriom_verify(self, access_token: str) -> dict[str, Any]:
         return self._request("auth.azuriom.verify", {"access_token": access_token}, timeout=30)
 
+    def azuriom_logout(self, access_token: str) -> dict[str, Any]:
+        return self._request("auth.azuriom.logout", {"access_token": access_token}, timeout=30)
+
+    def skin_profile(self, username: str) -> dict[str, Any]:
+        return self._request("skin.profile", {"username": username}, timeout=30)
+
+    def upload_skin(self, image: bytes, filename: str = "skin.png") -> dict[str, Any]:
+        if not self.token:
+            raise ValueError("Login required before uploading skin")
+        return self._request(
+            "skin.upload",
+            {
+                "access_token": self.token,
+                "filename": filename,
+                "image_base64": base64.b64encode(image).decode("ascii"),
+            },
+            timeout=60,
+        )
+
+    def upload_cape(self, image: bytes, filename: str = "cape.png") -> dict[str, Any]:
+        if not self.token:
+            raise ValueError("Login required before uploading cape")
+        return self._request(
+            "cape.upload",
+            {
+                "access_token": self.token,
+                "filename": filename,
+                "image_base64": base64.b64encode(image).decode("ascii"),
+            },
+            timeout=60,
+        )
+
     def check_update(
         self,
         current_version: str,

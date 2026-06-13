@@ -56,6 +56,15 @@ REINSTALL_SYSTEM_PATHS = [
     "runtimes",
 ]
 AUTHLIB_ARTIFACT_URL = "https://authlib-injector.yushi.moe/artifact/latest.json"
+_instances_root_override: Path | None = None
+
+
+def set_instances_root(path: str | Path | None) -> None:
+    global _instances_root_override
+    if not path:
+        _instances_root_override = None
+        return
+    _instances_root_override = Path(path).expanduser().resolve()
 
 
 def format_bytes(value: float) -> str:
@@ -379,7 +388,7 @@ def selected_manifest_files(
 
 
 def instances_root() -> Path:
-    path = launcher_data_dir() / "instances"
+    path = _instances_root_override or (launcher_data_dir() / "instances")
     path.mkdir(parents=True, exist_ok=True)
     return path.resolve()
 
@@ -799,6 +808,7 @@ def launch_minecraft(
     server_url: str | None = None,
     access_token: str | None = None,
     minecraft_profile: dict[str, Any] | None = None,
+    window_settings: dict[str, Any] | None = None,
 ) -> subprocess.Popen:
     if installed_version is None:
         installed_version = install_mod_loader(manifest, game_dir, status, progress)
@@ -813,6 +823,10 @@ def launch_minecraft(
     if server_url:
         jvm_arguments.extend(authlib_jvm_arguments(server_url, status, progress))
     jvm_arguments.extend(ram_jvm_arguments(ram_mb))
+    window_settings = window_settings or {}
+    fullscreen = bool(window_settings.get("fullscreen"))
+    width = int(window_settings.get("width") or 0)
+    height = int(window_settings.get("height") or 0)
     options.update(
         {
             "username": mc_username,
@@ -824,6 +838,12 @@ def launch_minecraft(
             "launcherVersion": "0.1.0",
         }
     )
+    if fullscreen:
+        options["fullscreen"] = True
+    elif width > 0 and height > 0:
+        options["customResolution"] = True
+        options["resolutionWidth"] = str(width)
+        options["resolutionHeight"] = str(height)
     command = minecraft_launcher_lib.command.get_minecraft_command(
         installed_version,
         str(game_dir),

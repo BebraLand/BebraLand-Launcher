@@ -1,0 +1,363 @@
+import QtQuick
+import QtQuick.Controls
+import "../components"
+
+Item {
+    id: root
+
+    property var state: ({})
+    property var profile: state.selectedProfile || ({})
+    property var news: state.news || []
+    signal navigate(string page)
+
+    Theme { id: theme }
+
+    function value(keys, fallback) {
+        for (var i = 0; i < keys.length; i++) {
+            var current = root.profile[keys[i]]
+            if (current !== undefined && current !== null && current !== "")
+                return current
+        }
+        return fallback
+    }
+
+    Item {
+        id: content
+        anchors.fill: parent
+        anchors.leftMargin: 125
+        anchors.rightMargin: 25
+        anchors.topMargin: 25
+        anchors.bottomMargin: 25
+
+        Rectangle {
+            id: onlinePanel
+            anchors.left: parent.left
+            anchors.top: parent.top
+            width: 164
+            height: 72
+            radius: 12
+            color: theme.frame
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.leftMargin: 10
+                anchors.verticalCenter: parent.verticalCenter
+                width: 50
+                height: 50
+                radius: 8
+                color: theme.primary
+
+                Image {
+                    anchors.centerIn: parent
+                    width: 22
+                    height: 22
+                    source: root.state.assetsUrl + "/Images/users.svg"
+                    fillMode: Image.PreserveAspectFit
+                }
+            }
+
+            Column {
+                anchors.left: parent.left
+                anchors.leftMargin: 72
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 3
+
+                Text {
+                    text: "On servers"
+                    color: theme.content
+                    font.family: theme.fontFamily
+                    font.pixelSize: 13
+                    font.weight: Font.Medium
+                }
+
+                Text {
+                    text: "0 pl."
+                    color: theme.headline
+                    font.family: theme.fontFamily
+                    font.pixelSize: 17
+                    font.weight: Font.Black
+                }
+            }
+        }
+
+        Column {
+            id: serverInfo
+            width: Math.max(360, content.width - newsBlock.width - 42)
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.verticalCenterOffset: 35
+            spacing: 20
+
+            Row {
+                spacing: 8
+                StatusBadge { text: "Available" }
+                StatusBadge { text: root.value(["minecraft_version", "game_version"], "1.21.1") }
+                StatusBadge { text: root.value(["state", "status"], "Ready") }
+            }
+
+            Text {
+                width: parent.width
+                text: root.value(["name", "display_name"], "BebraLand")
+                color: theme.headline
+                wrapMode: Text.WordWrap
+                font.family: theme.fontFamily
+                font.pixelSize: 60
+                font.weight: Font.Black
+            }
+
+            Text {
+                width: Math.min(parent.width, 500)
+                text: root.value(["description", "slug"], "")
+                color: theme.content
+                wrapMode: Text.WordWrap
+                lineHeight: 1.35
+                font.family: theme.fontFamily
+                font.pixelSize: 14
+                font.weight: Font.Medium
+            }
+
+            Row {
+                spacing: 10
+
+                Rectangle {
+                    id: playSplit
+                    width: 156
+                    height: 50
+                    radius: 25
+                    color: theme.primary
+                    clip: true
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 112
+                        color: playMainMouse.containsMouse ? theme.primaryHover : theme.primary
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 10
+
+                            Rectangle {
+                                width: 22
+                                height: 22
+                                radius: 11
+                                color: "#30FFFFFF"
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: ">"
+                                    color: theme.headline
+                                    font.family: theme.fontFamily
+                                    font.pixelSize: 15
+                                    font.weight: Font.Black
+                                }
+                            }
+
+                            Text {
+                                text: "Play"
+                                color: theme.headline
+                                font.family: theme.fontFamily
+                                font.pixelSize: 16
+                                font.weight: Font.Bold
+                            }
+                        }
+
+                        MouseArea {
+                            id: playMainMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: controller.launchSelected()
+                        }
+                    }
+
+                    Rectangle {
+                        x: 112
+                        width: 1
+                        height: parent.height
+                        color: "#30000000"
+                    }
+
+                    Rectangle {
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 43
+                        color: playDropMouse.containsMouse ? theme.primaryHover : theme.primary
+
+                        Image {
+                            anchors.centerIn: parent
+                            width: 18
+                            height: 18
+                            source: root.state.assetsUrl + "/Images/down.svg"
+                            fillMode: Image.PreserveAspectFit
+                        }
+
+                        MouseArea {
+                            id: playDropMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: playMenu.open()
+                        }
+                    }
+
+                    Popup {
+                        id: playMenu
+                        x: playSplit.width - width
+                        y: playSplit.height + 10
+                        width: 180
+                        height: 96
+                        padding: 8
+                        modal: false
+                        focus: false
+                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+                        background: Rectangle {
+                            color: theme.frame
+                            radius: 20
+                            border.color: theme.frameBorder
+                            border.width: 1
+                        }
+
+                        contentItem: Column {
+                            spacing: 8
+
+                            GmlButton {
+                                width: 164
+                                height: 36
+                                radius: 18
+                                kind: "additional"
+                                text: "Reinstall"
+                                font.pixelSize: 13
+                                onClicked: {
+                                    playMenu.close()
+                                    controller.reinstallSelected()
+                                }
+                            }
+
+                            GmlButton {
+                                width: 164
+                                height: 36
+                                radius: 18
+                                kind: "danger"
+                                text: "Delete"
+                                font.pixelSize: 13
+                                onClicked: {
+                                    playMenu.close()
+                                    controller.deleteSelected()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                GmlButton {
+                    width: 136
+                    text: "Settings"
+                    kind: "secondary"
+                    iconSource: root.state.assetsUrl + "/Images/settings.svg"
+                    iconSize: 24
+                    font.pixelSize: 16
+                    onClicked: root.navigate("settings")
+                }
+
+                GmlButton {
+                    width: 140
+                    text: (root.state.optionalMods || []).length > 0 ? "Mods " + (root.state.optionalMods || []).length : "Mods"
+                    kind: "secondary"
+                    iconSource: root.state.assetsUrl + "/Images/document.svg"
+                    iconSize: 23
+                    font.pixelSize: 16
+                    onClicked: root.navigate("mods")
+                }
+            }
+        }
+
+        Column {
+            id: newsBlock
+            width: Math.min(440, Math.max(320, content.width * 0.45))
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 12
+
+            Text {
+                text: "News"
+                color: theme.headline
+                font.family: theme.fontFamily
+                font.pixelSize: 22
+                font.weight: Font.Bold
+            }
+
+            Repeater {
+                model: root.news
+
+                delegate: Rectangle {
+                    width: newsBlock.width
+                    height: 134
+                    radius: 20
+                    color: theme.frame
+                    border.width: 1
+                    border.color: "#00000000"
+
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 22
+                        spacing: 9
+
+                        Text {
+                            width: parent.width
+                            text: modelData.title || "News"
+                            color: theme.headline
+                            elide: Text.ElideRight
+                            font.family: theme.fontFamily
+                            font.pixelSize: 22
+                            font.weight: Font.Black
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: modelData.description || ""
+                            color: theme.content
+                            elide: Text.ElideRight
+                            font.family: theme.fontFamily
+                            font.pixelSize: 14
+                            font.weight: Font.Medium
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: modelData.date || ""
+                            color: "#C8D0D4"
+                            elide: Text.ElideRight
+                            font.family: theme.fontFamily
+                            font.pixelSize: 12
+                            font.weight: Font.Medium
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: modelData.url ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: {
+                            if (modelData.url)
+                                controller.openUrl(modelData.url)
+                        }
+                    }
+                }
+            }
+        }
+
+        GmlButton {
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            width: 138
+            kind: "additional"
+            text: "Website"
+            iconSource: root.state.assetsUrl + "/Images/app.svg"
+            iconSize: 22
+            onClicked: controller.openUrl("https://bebraland.auuruum.me")
+        }
+    }
+}

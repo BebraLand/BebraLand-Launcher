@@ -1,36 +1,25 @@
 from __future__ import annotations
 
 import ctypes
+import ctypes.wintypes
+import html
+import json
 import os
+import re
 import sys
 import threading
+import urllib.request
+from pathlib import Path
 from typing import Any, Callable
 
-from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (
-    QApplication,
-    QCheckBox,
-    QComboBox,
-    QGridLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMessageBox,
-    QProgressBar,
-    QPushButton,
-    QScrollArea,
-    QSlider,
-    QSpinBox,
-    QTextEdit,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtCore import QPoint, Property, QObject, Qt, QUrl, Signal, Slot
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtQuickWidgets import QQuickWidget
+from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QVBoxLayout, QWidget
 
 from . import __version__
-from .api import ApiClient
-from .config import DEFAULT_SERVER_URL, build_update_id, platform_id, update_manifest_url
+from .api import ApiClient, absolute_url
+from .config import DEFAULT_SERVER_URL, build_update_id, launcher_data_dir, platform_id, update_manifest_url
 from .runtime import (
     delete_instance,
     install_mod_loader,
@@ -38,9 +27,11 @@ from .runtime import (
     instance_path,
     launch_minecraft,
     prepare_reinstall,
+    set_instances_root,
     sync_manifest,
 )
 from .settings import load_settings, save_settings
+from .theme import DEFAULT_BACKGROUND_PATH, GML_ASSETS_DIR, NEWS_API_URL, register_fonts
 from .updater import (
     can_self_replace,
     cleanup_update_cache,
@@ -56,22 +47,24 @@ DEFAULT_RECOMMENDED_RAM_MB = 2048
 MIN_RAM_MB = 512
 MAX_RAM_MB = 16384
 RESERVED_SYSTEM_RAM_MB = 1024
-PROGRESS_DETAIL_WIDTH = 430
+DEFAULT_WINDOW_WIDTH = 900
+DEFAULT_WINDOW_HEIGHT = 600
+WINDOW_RESIZE_MARGIN = 8
+WM_NCHITTEST = 0x0084
+HTLEFT = 10
+HTRIGHT = 11
+HTTOP = 12
+HTTOPLEFT = 13
+HTTOPRIGHT = 14
+HTBOTTOM = 15
+HTBOTTOMLEFT = 16
+HTBOTTOMRIGHT = 17
+QML_MAIN = GML_ASSETS_DIR.parent / "qml" / "Main.qml"
 
 
-def is_progress_detail_part(text: str) -> bool:
-    value = text.strip()
-    if value.startswith("ETA ") or "/s" in value or value.endswith("files"):
-        return True
-    return " / " in value and any(unit in value for unit in (" B", " KB", " MB", " GB", " TB"))
-
-
-def split_progress_label(label: str) -> tuple[str, str]:
-    parts = label.split(" - ")
-    for index, part in enumerate(parts[1:], start=1):
-        if is_progress_detail_part(part):
-            return " - ".join(parts[:index]), "    ".join(parts[index:])
-    return label, ""
+def strip_html(value: Any) -> str:
+    text = re.sub(r"<[^>]+>", " ", str(value or ""))
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
 def detect_system_ram_mb() -> int | None:
@@ -121,241 +114,193 @@ def clamp_ram_mb(value: Any, maximum: int) -> int:
     return max(MIN_RAM_MB, min(ram_mb, maximum))
 
 
+def file_url(path: Path) -> str:
+    return QUrl.fromLocalFile(str(path)).toString()
+
+
+def format_post_date(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = text.replace("T", " ")
+    if "+" in text:
+        head, tail = text.split("+", 1)
+        return f"{head} +{tail}"
+    return text
+
+
 class Bridge(QObject):
     log = Signal(str)
     error = Signal(str)
     profiles = Signal(list)
     auth = Signal(dict)
+    two_factor = Signal(str)
     install_update = Signal(dict)
     replace_update = Signal(object)
     progress = Signal(int, int, str)
+    news = Signal(list)
+    skin_profile = Signal(dict)
+    logged_out = Signal(str)
 
 
 class LauncherWindow(QWidget):
+    stateChanged = Signal()
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("BebraLand Launcher")
-        self.resize(860, 540)
-        self.setMinimumSize(760, 460)
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        self.resize(1000, 600)
+        self.setMinimumSize(900, 540)
+        register_fonts(self)
 
         self.settings = load_settings()
         self.client = ApiClient(self.settings.get("server_url", DEFAULT_SERVER_URL), self.settings.get("access_token"))
         self.auth_user: dict[str, Any] | None = self.settings.get("user")
         self.minecraft_profile: dict[str, Any] | None = self.settings.get("minecraft_profile")
         self.profiles: list[dict[str, Any]] = []
-        self.optional_mod_checkboxes: dict[str, QCheckBox] = {}
-        self.updating_optional_mods = False
+        self.selected_profile_slug = str(self.settings.get("selected_profile") or "")
         self.max_ram_mb = launcher_ram_limit_mb()
+        self.news: list[dict[str, Any]] = []
+        self.skin_profile_payload: dict[str, Any] = {}
+        self.status_text = f"BebraLand Launcher {__version__}"
+        self.progress_text = ""
+        self.progress_value = 0
+        self.progress_maximum = 100
+        self.progress_visible = False
+        self.login_status = ""
+        self.two_factor_visible = False
+        self._last_login_email = ""
+        self._last_login_password = ""
+        self._state: dict[str, Any] = {}
 
+        self.apply_install_root()
         self.bridge = Bridge()
         self.bridge.log.connect(self.log_line)
         self.bridge.error.connect(self.show_error)
         self.bridge.profiles.connect(self.set_profiles)
         self.bridge.auth.connect(self.set_auth)
+        self.bridge.two_factor.connect(self.show_two_factor)
         self.bridge.install_update.connect(self.install_update)
         self.bridge.replace_update.connect(replace_current_exe)
         self.bridge.progress.connect(self.set_progress)
+        self.bridge.news.connect(self.set_news)
+        self.bridge.skin_profile.connect(self.set_skin_profile)
+        self.bridge.logged_out.connect(self.handle_logged_out)
 
         self.build_ui()
         self.configure_client_events()
-        if self.auth_user:
-            self.show_logged_user(self.auth_user, prefix="Saved login")
-        self.verify_saved_login()
         self.refresh_profiles()
+        self.fetch_news()
+        if self.client.token:
+            self.verify_saved_login()
         self.check_update()
+        self.refresh_state()
+
+    @Property("QVariant", notify=stateChanged)
+    def state(self) -> dict[str, Any]:
+        return self._state
 
     def build_ui(self) -> None:
-        root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 12)
-        root.setSpacing(10)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self.quick = QQuickWidget(self)
+        self.quick.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
+        self.quick.rootContext().setContextProperty("controller", self)
+        self.quick.setSource(QUrl.fromLocalFile(str(QML_MAIN)))
+        layout.addWidget(self.quick)
 
-        server_row = QHBoxLayout()
-        server_row.addWidget(QLabel("Server"))
-        self.server_input = QLineEdit(self.settings.get("server_url", DEFAULT_SERVER_URL))
-        server_row.addWidget(self.server_input, 1)
-        self.connect_button = QPushButton("Connect")
-        self.connect_button.clicked.connect(self.refresh_profiles)
-        server_row.addWidget(self.connect_button)
-        root.addLayout(server_row)
+    def nativeEvent(self, event_type: bytes, message: int) -> tuple[bool, int]:
+        if not sys.platform.startswith("win") or self.isMaximized():
+            return False, 0
+        msg = ctypes.wintypes.MSG.from_address(int(message))
+        if msg.message != WM_NCHITTEST:
+            return False, 0
+        x = ctypes.c_short(msg.lParam & 0xFFFF).value
+        y = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
+        pos = self.mapFromGlobal(QPoint(x, y))
+        left = pos.x() <= WINDOW_RESIZE_MARGIN
+        right = pos.x() >= self.width() - WINDOW_RESIZE_MARGIN
+        top = pos.y() <= WINDOW_RESIZE_MARGIN
+        bottom = pos.y() >= self.height() - WINDOW_RESIZE_MARGIN
+        if top and left:
+            return True, HTTOPLEFT
+        if top and right:
+            return True, HTTOPRIGHT
+        if bottom and left:
+            return True, HTBOTTOMLEFT
+        if bottom and right:
+            return True, HTBOTTOMRIGHT
+        if left:
+            return True, HTLEFT
+        if right:
+            return True, HTRIGHT
+        if top:
+            return True, HTTOP
+        if bottom:
+            return True, HTBOTTOM
+        return False, 0
 
-        auth_grid = QGridLayout()
-        auth_grid.addWidget(QLabel("Azuriom"), 0, 0)
-        self.az_email_input = QLineEdit()
-        self.az_email_input.setPlaceholderText("email or username")
-        auth_grid.addWidget(self.az_email_input, 0, 1)
-        self.az_password_input = QLineEdit()
-        self.az_password_input.setPlaceholderText("password")
-        self.az_password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        auth_grid.addWidget(self.az_password_input, 0, 2)
-        self.az_2fa_input = QLineEdit()
-        self.az_2fa_input.setPlaceholderText("2FA")
-        self.az_2fa_input.setMaximumWidth(120)
-        auth_grid.addWidget(self.az_2fa_input, 0, 3, 1, 2)
-        self.az_login_button = QPushButton("Login Azuriom")
-        self.az_login_button.clicked.connect(self.azuriom_login)
-        auth_grid.addWidget(self.az_login_button, 0, 5)
-        self.auth_label = QLabel("Not logged in")
-        auth_grid.addWidget(self.auth_label, 1, 0, 1, 6)
-        auth_grid.setColumnStretch(1, 1)
-        root.addLayout(auth_grid)
+    def default_install_dir(self) -> Path:
+        return launcher_data_dir() / "instances"
 
-        pack_row = QHBoxLayout()
-        pack_row.addWidget(QLabel("Pack"))
-        self.profile_combo = QComboBox()
-        self.profile_combo.currentIndexChanged.connect(self.profile_changed)
-        pack_row.addWidget(self.profile_combo, 1)
-        self.launch_button = QPushButton("Launch")
-        self.launch_button.clicked.connect(self.launch_selected)
-        pack_row.addWidget(self.launch_button)
-        self.reinstall_button = QPushButton("Reinstall")
-        self.reinstall_button.clicked.connect(self.reinstall_selected)
-        pack_row.addWidget(self.reinstall_button)
-        self.delete_button = QPushButton("Delete")
-        self.delete_button.clicked.connect(self.delete_selected)
-        self.delete_button.setStyleSheet("color: #b91c1c;")
-        pack_row.addWidget(self.delete_button)
-        root.addLayout(pack_row)
+    def install_dir(self) -> Path:
+        return Path(str(self.settings.get("install_dir") or self.default_install_dir())).expanduser().resolve()
 
-        ram_row = QHBoxLayout()
-        ram_row.addWidget(QLabel("RAM"))
-        self.ram_slider = QSlider(Qt.Orientation.Horizontal)
-        self.ram_slider.setRange(MIN_RAM_MB, self.max_ram_mb)
-        self.ram_slider.setSingleStep(512)
-        self.ram_slider.setPageStep(1024)
-        self.ram_slider.setTickInterval(1024)
-        self.ram_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-        self.ram_slider.valueChanged.connect(self.ram_slider_changed)
-        ram_row.addWidget(self.ram_slider, 1)
-        self.ram_spin = QSpinBox()
-        self.ram_spin.setRange(MIN_RAM_MB, self.max_ram_mb)
-        self.ram_spin.setSingleStep(512)
-        self.ram_spin.setSuffix(" MB")
-        self.ram_spin.valueChanged.connect(self.ram_spin_changed)
-        ram_row.addWidget(self.ram_spin)
-        self.ram_hint = QLabel("")
-        self.ram_hint.setMinimumWidth(220)
-        self.ram_hint.setWordWrap(True)
-        ram_row.addWidget(self.ram_hint)
-        root.addLayout(ram_row)
+    def apply_install_root(self) -> None:
+        set_instances_root(self.install_dir())
 
-        self.optional_group = QGroupBox("Optional mods")
-        optional_group_layout = QVBoxLayout(self.optional_group)
-        optional_group_layout.setContentsMargins(8, 8, 8, 8)
-        optional_group_layout.setSpacing(6)
-        self.optional_scroll = QScrollArea()
-        self.optional_scroll.setWidgetResizable(True)
-        self.optional_scroll.setMaximumHeight(150)
-        self.optional_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        self.optional_content = QWidget()
-        self.optional_mods_layout = QVBoxLayout(self.optional_content)
-        self.optional_mods_layout.setContentsMargins(0, 0, 0, 0)
-        self.optional_mods_layout.setSpacing(4)
-        self.optional_scroll.setWidget(self.optional_content)
-        optional_group_layout.addWidget(self.optional_scroll)
-        self.optional_hint = QLabel("")
-        self.optional_hint.setWordWrap(True)
-        self.optional_hint.setStyleSheet("color: #4b5563;")
-        optional_group_layout.addWidget(self.optional_hint)
-        self.optional_group.setVisible(False)
-        root.addWidget(self.optional_group)
+    def refresh_state(self) -> None:
+        profile = self.selected_profile()
+        authenticated = bool(self.client.token and self.auth_user)
+        self._state = {
+            "authenticated": authenticated,
+            "version": __version__,
+            "status": self.status_text,
+            "progressText": self.progress_text,
+            "progressValue": self.progress_value,
+            "progressMaximum": self.progress_maximum,
+            "progressVisible": self.progress_visible,
+            "defaultBackgroundUrl": file_url(DEFAULT_BACKGROUND_PATH),
+            "assetsUrl": file_url(GML_ASSETS_DIR),
+            "profiles": [self.public_profile(profile_item) for profile_item in self.profiles],
+            "selectedSlug": self.selected_profile_slug,
+            "selectedProfile": self.public_profile(profile) if profile else {},
+            "ram": self.ram_state(profile),
+            "window": self.window_state(),
+            "installDir": str(self.install_dir()),
+            "optionalMods": self.optional_mod_state(profile),
+            "news": self.news,
+            "loginStatus": self.login_status,
+            "twoFactorVisible": self.two_factor_visible,
+            "accountName": self.current_username() or "Not logged in",
+            "skinBodyUrl": self.skin_body_url(),
+        }
+        self.stateChanged.emit()
 
-        self.log_output = QTextEdit()
-        self.log_output.setReadOnly(True)
-        root.addWidget(self.log_output, 1)
+    def public_profile(self, profile: dict[str, Any] | None) -> dict[str, Any]:
+        if not profile:
+            return {}
+        return {
+            **profile,
+            "icon_url": self.absolute_profile_url(profile, "icon_url"),
+            "background_url": self.absolute_profile_url(profile, "background_url"),
+        }
 
-        status_row = QHBoxLayout()
-        status_row.setSpacing(12)
-        self.status = QLabel(f"BebraLand Launcher {__version__}")
-        self.status.setMinimumWidth(0)
-        self.status.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        status_row.addWidget(self.status, 1)
-        self.version_label = QLabel(f"v{__version__}")
-        self.version_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.version_label.setStyleSheet("color: #4b5563;")
-        status_row.addWidget(self.version_label)
-        self.progress_detail = QLabel("")
-        self.progress_detail.setFixedWidth(PROGRESS_DETAIL_WIDTH)
-        self.progress_detail.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        detail_font = QFont("Consolas")
-        detail_font.setStyleHint(QFont.StyleHint.Monospace)
-        self.progress_detail.setFont(detail_font)
-        status_row.addWidget(self.progress_detail)
-        root.addLayout(status_row)
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        root.addWidget(self.progress_bar)
-
-    def log_line(self, text: str) -> None:
-        self.log_output.append(text)
-        self.status.setText(text)
-        self.progress_detail.clear()
-
-    def show_error(self, text: str) -> None:
-        self.log_line(f"Error: {text}")
-        QMessageBox.critical(self, "BebraLand", text)
-
-    def set_progress(self, value: int, maximum: int, label: str) -> None:
-        if maximum > 0:
-            self.progress_bar.setRange(0, maximum)
-            self.progress_bar.setValue(max(0, min(value, maximum)))
-        elif value > 0:
-            self.progress_bar.setRange(0, 100)
-            self.progress_bar.setValue(max(0, min(value, 100)))
-        if label:
-            status_text, detail_text = split_progress_label(label)
-            self.status.setText(status_text)
-            self.status.setToolTip(label)
-            self.progress_detail.setText(detail_text)
-
-    def run_bg(self, fn: Callable[[], Any], popup: bool = True) -> None:
-        def worker() -> None:
-            try:
-                fn()
-            except Exception as exc:
-                if popup:
-                    self.bridge.error.emit(str(exc))
-                else:
-                    self.bridge.log.emit(f"Error: {exc}")
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def configure_client_events(self) -> None:
-        self.client.set_event_handlers(
-            profiles_changed=self.bridge.profiles.emit,
-            log=self.bridge.log.emit,
-        )
-        self.client.start_event_stream()
-
-    def reset_client(self) -> None:
-        server_url = self.server_input.text().strip()
-        if server_url.rstrip("/") != self.client.server_url:
-            token = self.client.token
-            self.client.close()
-            self.client = ApiClient(server_url, token)
-            self.configure_client_events()
-        self.settings["server_url"] = self.client.server_url
-        save_settings(self.settings)
-
-    def selected_slug(self) -> str | None:
-        selected_data = self.profile_combo.currentData()
-        if selected_data:
-            return str(selected_data)
-        selected = self.profile_combo.currentText()
-        for profile in self.profiles:
-            label = f"{profile['name']} ({profile['slug']})"
-            if label == selected:
-                return profile["slug"]
-        return None
+    def absolute_profile_url(self, profile: dict[str, Any], field: str) -> str:
+        value = str(profile.get(field) or "").strip()
+        return absolute_url(self.client.server_url, value) if value else ""
 
     def selected_profile(self) -> dict[str, Any] | None:
-        slug = self.selected_slug()
-        if not slug:
-            return None
         for profile in self.profiles:
-            if profile["slug"] == slug:
+            if profile.get("slug") == self.selected_profile_slug:
                 return profile
-        return None
+        return self.profiles[0] if self.profiles else None
+
+    def selected_slug(self) -> str | None:
+        profile = self.selected_profile()
+        return str(profile.get("slug")) if profile else None
 
     def recommended_ram_mb(self, profile: dict[str, Any] | None = None) -> int:
         profile = profile or self.selected_profile()
@@ -363,31 +308,32 @@ class LauncherWindow(QWidget):
             return DEFAULT_RECOMMENDED_RAM_MB
         return clamp_ram_mb(profile.get("recommended_ram_mb", DEFAULT_RECOMMENDED_RAM_MB), self.max_ram_mb)
 
-    def raw_recommended_ram_mb(self, profile: dict[str, Any] | None = None) -> int:
-        profile = profile or self.selected_profile()
+    def profile_ram_value(self, profile: dict[str, Any] | None) -> int:
         if not profile:
             return DEFAULT_RECOMMENDED_RAM_MB
-        try:
-            return int(profile.get("recommended_ram_mb", DEFAULT_RECOMMENDED_RAM_MB))
-        except (TypeError, ValueError):
-            return DEFAULT_RECOMMENDED_RAM_MB
-
-    def selected_ram_mb(self) -> int:
-        return clamp_ram_mb(self.ram_spin.value(), self.max_ram_mb)
-
-    def ram_overrides(self) -> dict[str, Any]:
-        overrides = self.settings.get("profile_ram_mb")
+        overrides = self.settings.setdefault("profile_ram_mb", {})
         if not isinstance(overrides, dict):
             overrides = {}
             self.settings["profile_ram_mb"] = overrides
-        return overrides
+        return clamp_ram_mb(overrides.get(profile["slug"], profile.get("recommended_ram_mb")), self.max_ram_mb)
 
-    def optional_mod_settings(self) -> dict[str, Any]:
-        settings = self.settings.get("profile_optional_mods")
-        if not isinstance(settings, dict):
-            settings = {}
-            self.settings["profile_optional_mods"] = settings
-        return settings
+    def ram_state(self, profile: dict[str, Any] | None) -> dict[str, Any]:
+        value = self.profile_ram_value(profile)
+        recommended = self.recommended_ram_mb(profile)
+        hint = f"Recommended: {recommended} MB"
+        if value < recommended:
+            hint = f"Below recommended: {recommended} MB"
+        return {"min": MIN_RAM_MB, "max": self.max_ram_mb, "value": value, "recommended": recommended, "hint": hint}
+
+    def window_state(self) -> dict[str, Any]:
+        value = self.settings.get("minecraft_window")
+        if not isinstance(value, dict):
+            value = {}
+        return {
+            "fullscreen": bool(value.get("fullscreen")),
+            "width": int(value.get("width") or DEFAULT_WINDOW_WIDTH),
+            "height": int(value.get("height") or DEFAULT_WINDOW_HEIGHT),
+        }
 
     def optional_mods_for_profile(self, profile: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         profile = profile or self.selected_profile()
@@ -404,14 +350,42 @@ class LauncherWindow(QWidget):
     def optional_mod_name(mod: dict[str, Any]) -> str:
         return str(mod.get("name") or mod.get("id") or "").strip()
 
-    @staticmethod
-    def optional_mod_default_enabled(mod: dict[str, Any]) -> bool:
-        return bool(mod.get("default_enabled"))
+    def optional_mod_settings(self) -> dict[str, Any]:
+        value = self.settings.get("profile_optional_mods")
+        if not isinstance(value, dict):
+            value = {}
+            self.settings["profile_optional_mods"] = value
+        return value
+
+    def optional_mod_state(self, profile: dict[str, Any] | None) -> list[dict[str, Any]]:
+        if not profile:
+            return []
+        selected = self.selected_optional_mod_ids(profile)
+        result = []
+        for mod in self.optional_mods_for_profile(profile):
+            mod_id = self.optional_mod_id(mod)
+            if not mod_id:
+                continue
+            details = ["default on" if mod.get("default_enabled") else "default off"]
+            requires = [str(item) for item in mod.get("requires") or []]
+            if requires:
+                details.append(f"requires: {', '.join(requires)}")
+            description = str(mod.get("description") or "").strip()
+            if description:
+                details.append(description)
+            result.append(
+                {
+                    "id": mod_id,
+                    "name": self.optional_mod_name(mod),
+                    "details": " | ".join(details),
+                    "enabled": mod_id in selected,
+                }
+            )
+        return result
 
     def resolve_optional_mod_ids(self, mods: list[dict[str, Any]], selected: set[str]) -> set[str]:
         mod_map = {self.optional_mod_id(mod): mod for mod in mods if self.optional_mod_id(mod)}
         resolved = {mod_id for mod_id in selected if mod_id in mod_map}
-
         changed = True
         while changed:
             changed = False
@@ -421,7 +395,6 @@ class LauncherWindow(QWidget):
                     if required_id in mod_map and required_id not in resolved:
                         resolved.add(required_id)
                         changed = True
-
         for mod_id in list(resolved):
             for conflict_id in mod_map[mod_id].get("conflicts") or []:
                 conflict_id = str(conflict_id)
@@ -429,231 +402,94 @@ class LauncherWindow(QWidget):
                     resolved.discard(conflict_id)
         return resolved
 
-    def remove_optional_mod_with_dependents(
-        self,
-        mods: list[dict[str, Any]],
-        selected: set[str],
-        disabled_id: str,
-    ) -> set[str]:
-        mod_map = {self.optional_mod_id(mod): mod for mod in mods if self.optional_mod_id(mod)}
-        removed = {disabled_id}
-        changed = True
-        while changed:
-            changed = False
-            for mod_id in list(selected - removed):
-                requires = {str(item) for item in mod_map.get(mod_id, {}).get("requires") or []}
-                if requires & removed:
-                    removed.add(mod_id)
-                    changed = True
-        return {mod_id for mod_id in selected if mod_id not in removed}
-
-    def optional_conflict_ids(self, mods: list[dict[str, Any]], mod_id: str) -> set[str]:
-        conflicts: set[str] = set()
-        for mod in mods:
-            item_id = self.optional_mod_id(mod)
-            item_conflicts = {str(item) for item in mod.get("conflicts") or []}
-            if item_id == mod_id:
-                conflicts |= item_conflicts
-            elif mod_id in item_conflicts:
-                conflicts.add(item_id)
-        return conflicts
-
     def selected_optional_mod_ids(self, profile: dict[str, Any] | None = None) -> set[str]:
         profile = profile or self.selected_profile()
         if not profile:
             return set()
-        slug = str(profile.get("slug") or "")
-        overrides = self.optional_mod_settings().get(slug)
+        overrides = self.optional_mod_settings().get(str(profile.get("slug") or ""))
         if not isinstance(overrides, dict):
             overrides = {}
-        selected: set[str] = set()
-        mods = self.optional_mods_for_profile(profile)
-        for mod in mods:
+        selected = set()
+        for mod in self.optional_mods_for_profile(profile):
             mod_id = self.optional_mod_id(mod)
-            if not mod_id:
-                continue
-            enabled = overrides.get(mod_id, self.optional_mod_default_enabled(mod))
-            if bool(enabled):
+            if mod_id and bool(overrides.get(mod_id, mod.get("default_enabled"))):
                 selected.add(mod_id)
-        return self.resolve_optional_mod_ids(mods, selected)
+        return self.resolve_optional_mod_ids(self.optional_mods_for_profile(profile), selected)
 
-    def save_optional_mod_selection(self, profile: dict[str, Any], selected: set[str]) -> None:
-        slug = str(profile.get("slug") or "")
-        if not slug:
-            return
-        mods = self.optional_mods_for_profile(profile)
-        self.optional_mod_settings()[slug] = {
-            self.optional_mod_id(mod): self.optional_mod_id(mod) in selected
-            for mod in mods
-            if self.optional_mod_id(mod)
-        }
+    def current_username(self) -> str:
+        if self.minecraft_profile:
+            name = str(self.minecraft_profile.get("name") or "").strip()
+            if name:
+                return name
+        if self.auth_user:
+            return str(self.auth_user.get("display_name") or self.auth_user.get("username") or "").strip()
+        return ""
+
+    def skin_body_url(self) -> str:
+        avatars = self.skin_profile_payload.get("avatars")
+        if isinstance(avatars, dict):
+            return str(avatars.get("body_url") or "")
+        return ""
+
+    def run_bg(self, fn: Callable[[], Any], popup: bool = True) -> None:
+        def worker() -> None:
+            try:
+                fn()
+            except Exception as exc:
+                if popup:
+                    self.bridge.error.emit(str(exc))
+                else:
+                    self.bridge.log.emit(f"Error: {exc}")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def configure_client_events(self) -> None:
+        self.client.set_event_handlers(profiles_changed=self.bridge.profiles.emit, log=self.bridge.log.emit)
+        self.client.start_event_stream()
+
+    def reset_client(self) -> None:
+        server_url = str(self.settings.get("server_url") or DEFAULT_SERVER_URL).strip()
+        if server_url.rstrip("/") != self.client.server_url:
+            token = self.client.token
+            self.client.close()
+            self.client = ApiClient(server_url, token)
+            self.configure_client_events()
+        self.settings["server_url"] = self.client.server_url
         save_settings(self.settings)
 
-    def clear_optional_mod_controls(self) -> None:
-        while self.optional_mods_layout.count():
-            item = self.optional_mods_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-        self.optional_mod_checkboxes.clear()
+    def log_line(self, text: str) -> None:
+        self.status_text = text
+        self.refresh_state()
 
-    def update_optional_mod_controls(self) -> None:
-        profile = self.selected_profile()
-        mods = self.optional_mods_for_profile(profile)
-        self.updating_optional_mods = True
-        self.clear_optional_mod_controls()
-        if not profile or not mods:
-            self.optional_group.setVisible(False)
-            self.optional_hint.clear()
-            self.updating_optional_mods = False
-            return
+    def show_error(self, text: str) -> None:
+        self.log_line(f"Error: {text}")
+        QMessageBox.critical(self, "BebraLand", text)
 
-        selected = self.selected_optional_mod_ids(profile)
-        name_by_id = {self.optional_mod_id(mod): self.optional_mod_name(mod) for mod in mods}
-        for mod in mods:
-            mod_id = self.optional_mod_id(mod)
-            if not mod_id:
-                continue
-            row = QWidget()
-            layout = QHBoxLayout(row)
-            layout.setContentsMargins(0, 0, 0, 0)
-            layout.setSpacing(8)
-            checkbox = QCheckBox(self.optional_mod_name(mod))
-            checkbox.setChecked(mod_id in selected)
-            checkbox.toggled.connect(lambda checked, item_id=mod_id: self.optional_mod_toggled(item_id, checked))
-            layout.addWidget(checkbox)
+    def show_two_factor(self, message: str) -> None:
+        self.two_factor_visible = True
+        self.login_status = message or "2FA code required"
+        self.refresh_state()
 
-            details: list[str] = ["default on" if self.optional_mod_default_enabled(mod) else "default off"]
-            requires = [name_by_id.get(str(item), str(item)) for item in mod.get("requires") or []]
-            conflicts = [name_by_id.get(str(item), str(item)) for item in mod.get("conflicts") or []]
-            if requires:
-                details.append(f"requires: {', '.join(requires)}")
-            if conflicts:
-                details.append(f"conflicts: {', '.join(conflicts)}")
-            description = str(mod.get("description") or "").strip()
-            if description:
-                details.append(description)
-            detail_label = QLabel(" | ".join(details))
-            detail_label.setWordWrap(True)
-            detail_label.setStyleSheet("color: #4b5563;")
-            layout.addWidget(detail_label, 1)
-
-            tooltip = "\n".join(part for part in details if part)
-            row.setToolTip(tooltip)
-            checkbox.setToolTip(tooltip)
-            self.optional_mods_layout.addWidget(row)
-            self.optional_mod_checkboxes[mod_id] = checkbox
-
-        self.optional_mods_layout.addStretch(1)
-        self.optional_hint.setText(f"Enabled: {len(selected)} / {len(mods)}")
-        self.optional_group.setVisible(True)
-        self.updating_optional_mods = False
-
-    def optional_mod_toggled(self, mod_id: str, checked: bool) -> None:
-        if self.updating_optional_mods:
-            return
-        profile = self.selected_profile()
-        if not profile:
-            return
-        mods = self.optional_mods_for_profile(profile)
-        selected = {
-            item_id
-            for item_id, checkbox in self.optional_mod_checkboxes.items()
-            if checkbox.isChecked()
-        }
-        if checked:
-            selected -= self.optional_conflict_ids(mods, mod_id)
-            selected.add(mod_id)
-            selected = self.resolve_optional_mod_ids(mods, selected)
-        else:
-            selected = self.remove_optional_mod_with_dependents(mods, selected, mod_id)
-        self.save_optional_mod_selection(profile, selected)
-        self.update_optional_mod_controls()
-
-    def profile_ram_value(self, profile: dict[str, Any]) -> int:
-        overrides = self.ram_overrides()
-        return clamp_ram_mb(overrides.get(profile["slug"], profile.get("recommended_ram_mb")), self.max_ram_mb)
-
-    def set_ram_controls(self, ram_mb: int, save: bool = False) -> None:
-        ram_mb = clamp_ram_mb(ram_mb, self.max_ram_mb)
-        self.ram_slider.blockSignals(True)
-        self.ram_spin.blockSignals(True)
-        self.ram_slider.setValue(ram_mb)
-        self.ram_spin.setValue(ram_mb)
-        self.ram_slider.blockSignals(False)
-        self.ram_spin.blockSignals(False)
-        self.update_ram_hint()
-        if save:
-            profile = self.selected_profile()
-            if profile:
-                overrides = self.ram_overrides()
-                overrides[profile["slug"]] = ram_mb
-                save_settings(self.settings)
-
-    def update_ram_controls(self) -> None:
-        profile = self.selected_profile()
-        if profile:
-            self.set_ram_controls(self.profile_ram_value(profile), save=False)
-        else:
-            self.set_ram_controls(DEFAULT_RECOMMENDED_RAM_MB, save=False)
-
-    def update_ram_hint(self) -> None:
-        profile = self.selected_profile()
-        recommended = self.recommended_ram_mb(profile)
-        value = self.selected_ram_mb()
-        raw_recommended = self.raw_recommended_ram_mb(profile)
-        if raw_recommended > self.max_ram_mb:
-            self.ram_hint.setText(f"Recommended {raw_recommended} MB, capped at {self.max_ram_mb} MB")
-            self.ram_hint.setStyleSheet("color: #b45309;")
-        elif value < recommended:
-            self.ram_hint.setText(f"Below recommended: {recommended} MB")
-            self.ram_hint.setStyleSheet("color: #b91c1c;")
-        else:
-            self.ram_hint.setText(f"Recommended: {recommended} MB")
-            self.ram_hint.setStyleSheet("color: #4b5563;")
-
-    def ram_slider_changed(self, value: int) -> None:
-        self.set_ram_controls(value, save=True)
-
-    def ram_spin_changed(self, value: int) -> None:
-        self.set_ram_controls(value, save=True)
-
-    def profile_changed(self) -> None:
-        slug = self.selected_slug()
-        if slug:
-            self.settings["selected_profile"] = slug
-            save_settings(self.settings)
-        self.update_ram_controls()
-        self.update_optional_mod_controls()
-
-    def refresh_profiles(self) -> None:
-        self.reset_client()
-
-        def task() -> None:
-            self.bridge.log.emit("Load profiles")
-            self.bridge.profiles.emit(self.client.get_profiles())
-
-        self.run_bg(task)
+    def set_progress(self, value: int, maximum: int, label: str) -> None:
+        self.progress_visible = True
+        self.progress_value = max(0, value)
+        self.progress_maximum = max(1, maximum)
+        self.progress_text = label
+        self.status_text = label.split(" - ", 1)[0] if label else self.status_text
+        self.refresh_state()
 
     def set_profiles(self, profiles: list[dict[str, Any]]) -> None:
-        current_slug = self.settings.get("selected_profile")
-        current = self.profile_combo.currentText()
         self.profiles = profiles
-        self.profile_combo.clear()
-        for profile in profiles:
-            self.profile_combo.addItem(f"{profile['name']} ({profile['slug']})", profile["slug"])
-        if current_slug:
-            for index, profile in enumerate(profiles):
-                if profile["slug"] == current_slug:
-                    self.profile_combo.setCurrentIndex(index)
-                    break
-        elif current:
-            index = self.profile_combo.findText(current)
-            if index >= 0:
-                self.profile_combo.setCurrentIndex(index)
-        self.update_ram_controls()
-        self.update_optional_mod_controls()
-        self.log_line(f"Profiles: {len(profiles)}")
+        if not self.selected_profile_slug and profiles:
+            self.selected_profile_slug = str(profiles[0].get("slug") or "")
+        if self.selected_profile_slug and not any(p.get("slug") == self.selected_profile_slug for p in profiles):
+            self.selected_profile_slug = str(profiles[0].get("slug") or "") if profiles else ""
+        self.status_text = f"Profiles: {len(profiles)}"
+        self.refresh_state()
+
+    def set_news(self, posts: list[dict[str, Any]]) -> None:
+        self.news = posts
+        self.refresh_state()
 
     def set_auth(self, payload: dict[str, Any]) -> None:
         self.auth_user = payload["user"]
@@ -665,14 +501,58 @@ class LauncherWindow(QWidget):
         if self.minecraft_profile:
             self.settings["minecraft_profile"] = self.minecraft_profile
         save_settings(self.settings)
-        self.show_logged_user(self.auth_user, prefix="Logged in")
+        self.two_factor_visible = False
+        self.login_status = ""
+        self.status_text = f"Logged in: {self.current_username()}"
+        self.refresh_skin_profile()
+        self.refresh_state()
 
-    def show_logged_user(self, user: dict[str, Any], prefix: str = "Logged in") -> None:
-        name = user.get("display_name") or user.get("username") or "AzuriomUser"
-        user_id = user.get("id") or user.get("azuriom_id") or "unknown"
-        text = f"{prefix}: {name} ({user_id})"
-        self.auth_label.setText(text)
-        self.log_line(text)
+    def set_skin_profile(self, payload: dict[str, Any]) -> None:
+        self.skin_profile_payload = payload
+        self.refresh_state()
+
+    def handle_logged_out(self, reason: str = "") -> None:
+        self.auth_user = None
+        self.minecraft_profile = None
+        self.client.token = None
+        self.settings.pop("access_token", None)
+        self.settings.pop("user", None)
+        self.settings.pop("minecraft_profile", None)
+        save_settings(self.settings)
+        self.login_status = reason
+        self.refresh_state()
+
+    def refresh_profiles(self) -> None:
+        self.reset_client()
+
+        def task() -> None:
+            self.bridge.log.emit("Load profiles")
+            self.bridge.profiles.emit(self.client.get_profiles())
+
+        self.run_bg(task, popup=False)
+
+    def fetch_news(self) -> None:
+        def task() -> None:
+            request = urllib.request.Request(NEWS_API_URL, headers={"Accept": "application/json"}, method="GET")
+            with urllib.request.urlopen(request, timeout=20) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            posts = []
+            if isinstance(payload, list):
+                for item in payload[:5]:
+                    if not isinstance(item, dict):
+                        continue
+                    posts.append(
+                        {
+                            "title": str(item.get("title") or "News"),
+                            "description": strip_html(item.get("description") or item.get("content") or ""),
+                            "date": format_post_date(item.get("published_at")),
+                            "url": str(item.get("url") or ""),
+                            "image": str(item.get("image") or ""),
+                        }
+                    )
+            self.bridge.news.emit(posts)
+
+        self.run_bg(task, popup=False)
 
     def verify_saved_login(self) -> None:
         token = self.client.token
@@ -682,41 +562,195 @@ class LauncherWindow(QWidget):
         def task() -> None:
             try:
                 payload = self.client.azuriom_verify(token)
-            except Exception as exc:
-                status_code = getattr(exc, "status_code", None)
-                response = getattr(exc, "response", None)
-                if status_code in {401, 403} or (response is not None and response.status_code in {401, 403}):
-                    self.settings.pop("access_token", None)
-                    self.settings.pop("user", None)
-                    self.settings.pop("minecraft_profile", None)
-                    save_settings(self.settings)
-                    self.client.token = None
-                    self.minecraft_profile = None
-                    self.bridge.log.emit("Saved login expired")
-                else:
-                    self.bridge.log.emit("Saved login not verified")
+            except Exception:
+                self.bridge.logged_out.emit("Saved login expired")
                 return
             payload["access_token"] = token
             self.bridge.auth.emit(payload)
 
         threading.Thread(target=task, daemon=True).start()
 
-    def azuriom_login(self) -> None:
-        email = self.az_email_input.text().strip()
-        password = self.az_password_input.text()
-        code = self.az_2fa_input.text().strip() or None
+    def check_update(self) -> None:
+        manifest_url = update_manifest_url()
+        if not manifest_url:
+            return
+
+        def task() -> None:
+            release = get_update_release(__version__, manifest_url, self.bridge.log.emit, platform_id(), build_update_id())
+            if release:
+                self.bridge.log.emit(f"Update available: {display_version(release)}")
+                self.bridge.install_update.emit(release)
+
+        self.run_bg(task, popup=False)
+
+    @Slot()
+    def windowMinimize(self) -> None:
+        self.showMinimized()
+
+    @Slot()
+    def windowMaximize(self) -> None:
+        self.showNormal() if self.isMaximized() else self.showMaximized()
+
+    @Slot()
+    def windowClose(self) -> None:
+        self.close()
+
+    @Slot()
+    def startWindowMove(self) -> None:
+        handle = self.windowHandle()
+        if handle:
+            handle.startSystemMove()
+
+    @Slot(str)
+    def openUrl(self, value: str) -> None:
+        if value:
+            QDesktopServices.openUrl(QUrl(value))
+
+    @Slot(str)
+    def selectProfile(self, slug: str) -> None:
+        self.selected_profile_slug = slug
+        self.settings["selected_profile"] = slug
+        save_settings(self.settings)
+        self.refresh_state()
+
+    @Slot(int)
+    def setRam(self, value: int) -> None:
+        profile = self.selected_profile()
+        if not profile:
+            return
+        overrides = self.settings.setdefault("profile_ram_mb", {})
+        if not isinstance(overrides, dict):
+            overrides = {}
+            self.settings["profile_ram_mb"] = overrides
+        overrides[str(profile["slug"])] = clamp_ram_mb(value, self.max_ram_mb)
+        save_settings(self.settings)
+        self.refresh_state()
+
+    @Slot(bool, int, int)
+    def setWindowSettings(self, fullscreen: bool, width: int, height: int) -> None:
+        self.settings["minecraft_window"] = {
+            "fullscreen": bool(fullscreen),
+            "width": max(320, int(width or DEFAULT_WINDOW_WIDTH)),
+            "height": max(240, int(height or DEFAULT_WINDOW_HEIGHT)),
+        }
+        save_settings(self.settings)
+        self.refresh_state()
+
+    @Slot()
+    def chooseInstallFolder(self) -> None:
+        path = QFileDialog.getExistingDirectory(self, "Choose install folder", str(self.install_dir()))
+        if not path:
+            return
+        self.settings["install_dir"] = path
+        save_settings(self.settings)
+        self.apply_install_root()
+        self.refresh_state()
+
+    @Slot()
+    def openInstallFolder(self) -> None:
+        self.install_dir().mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.install_dir())))
+
+    @Slot(str, str, str)
+    def login(self, email: str, password: str, code: str = "") -> None:
+        email = email.strip()
+        code = code.strip()
+        if not email or not password:
+            self.login_status = "Login and password required"
+            self.refresh_state()
+            return
+        self._last_login_email = email
+        self._last_login_password = password
         self.reset_client()
 
         def task() -> None:
-            payload = self.client.azuriom_login(email, password, code)
+            payload = self.client.azuriom_login(email, password, code or None)
             if payload.get("status") == "pending":
-                self.bridge.log.emit(payload.get("message") or "Azuriom 2FA code required")
+                message = payload.get("message") or "2FA code required"
+                self.bridge.log.emit(message)
+                self.bridge.two_factor.emit(message)
                 return
             self.bridge.auth.emit(payload)
 
+        self.login_status = "Logging in..."
+        self.refresh_state()
         self.run_bg(task)
 
-    def launch_selected(self) -> None:
+    @Slot(str)
+    def confirm2fa(self, code: str) -> None:
+        self.login(self._last_login_email, self._last_login_password, code)
+
+    @Slot()
+    def logout(self) -> None:
+        token = self.client.token
+
+        def task() -> None:
+            if token:
+                try:
+                    self.client.azuriom_logout(token)
+                except Exception:
+                    pass
+            self.bridge.logged_out.emit("Logged out")
+
+        self.run_bg(task, popup=False)
+
+    @Slot()
+    def refreshSkin(self) -> None:
+        self.refresh_skin_profile()
+
+    def refresh_skin_profile(self) -> None:
+        username = self.current_username()
+        if not username:
+            return
+
+        def task() -> None:
+            self.bridge.skin_profile.emit(self.client.skin_profile(username))
+
+        self.run_bg(task, popup=False)
+
+    @Slot(str)
+    def uploadTexture(self, texture_type: str) -> None:
+        if not self.client.token or not self.auth_user:
+            QMessageBox.warning(self, "BebraLand", "Login Azuriom first")
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Choose PNG", str(Path.home()), "PNG images (*.png)")
+        if not path:
+            return
+        file_path = Path(path)
+
+        def task() -> None:
+            image = file_path.read_bytes()
+            if texture_type == "cape":
+                self.client.upload_cape(image, file_path.name)
+            else:
+                self.client.upload_skin(image, file_path.name)
+            self.bridge.log.emit(f"Uploaded {texture_type}: {file_path.name}")
+            self.refresh_skin_profile()
+
+        self.run_bg(task)
+
+    @Slot(str, bool)
+    def toggleOptionalMod(self, mod_id: str, checked: bool) -> None:
+        profile = self.selected_profile()
+        if not profile:
+            return
+        selected = self.selected_optional_mod_ids(profile)
+        if checked:
+            selected.add(mod_id)
+            selected = self.resolve_optional_mod_ids(self.optional_mods_for_profile(profile), selected)
+        else:
+            selected.discard(mod_id)
+        slug = str(profile.get("slug") or "")
+        self.optional_mod_settings()[slug] = {
+            self.optional_mod_id(mod): self.optional_mod_id(mod) in selected
+            for mod in self.optional_mods_for_profile(profile)
+            if self.optional_mod_id(mod)
+        }
+        save_settings(self.settings)
+        self.refresh_state()
+
+    @Slot()
+    def launchSelected(self) -> None:
         slug = self.selected_slug()
         if not slug:
             QMessageBox.warning(self, "BebraLand", "Choose pack first")
@@ -724,21 +758,17 @@ class LauncherWindow(QWidget):
         if not self.client.token or not self.auth_user:
             QMessageBox.warning(self, "BebraLand", "Login Azuriom first")
             return
-        if not self.minecraft_profile:
-            QMessageBox.warning(self, "BebraLand", "Saved login is not verified yet")
-            return
         profile = self.selected_profile()
-        recommended_ram_mb = self.recommended_ram_mb(profile)
-        ram_mb = self.selected_ram_mb()
-        if ram_mb < recommended_ram_mb:
+        ram_mb = self.profile_ram_value(profile)
+        recommended = self.recommended_ram_mb(profile)
+        if ram_mb < recommended:
             answer = QMessageBox.question(
                 self,
                 "BebraLand RAM",
-                f"Selected RAM ({ram_mb} MB) is below recommended ({recommended_ram_mb} MB). Launch anyway?",
+                f"Selected RAM ({ram_mb} MB) is below recommended ({recommended} MB). Launch anyway?",
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
-        self.reset_client()
         selected_optional_mod_ids = self.selected_optional_mod_ids(profile)
 
         def task() -> None:
@@ -753,11 +783,10 @@ class LauncherWindow(QWidget):
                 self.bridge.progress.emit,
                 selected_optional_mod_ids=selected_optional_mod_ids,
             )
-            username = (self.auth_user or {}).get("display_name") or "BebraPlayer"
             launch_minecraft(
                 manifest,
                 game_dir,
-                username,
+                self.current_username() or "BebraPlayer",
                 self.bridge.log.emit,
                 self.bridge.progress.emit,
                 installed_version=installed_version,
@@ -765,41 +794,32 @@ class LauncherWindow(QWidget):
                 server_url=self.client.server_url,
                 access_token=self.client.token,
                 minecraft_profile=self.minecraft_profile,
+                window_settings=self.window_state(),
             )
 
         self.run_bg(task)
 
-    def reinstall_selected(self) -> None:
+    @Slot()
+    def reinstallSelected(self) -> None:
         slug = self.selected_slug()
         if not slug:
-            QMessageBox.warning(self, "BebraLand", "Choose pack first")
             return
         profile = self.selected_profile() or {}
         name = profile.get("name") or slug
         answer = QMessageBox.question(
             self,
             "BebraLand reinstall",
-            (
-                f"Reinstall local pack '{name}'?\n\n"
-                "Saves, screenshots, resource packs, shader packs, options, and server list stay. "
-                "Minecraft runtime and managed pack files download again."
-            ),
+            f"Reinstall local pack '{name}'?\n\nUser data stays. Runtime and managed pack files download again.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
-        self.reset_client()
         selected_optional_mod_ids = self.selected_optional_mod_ids(profile)
 
         def task() -> None:
-            self.bridge.log.emit(f"Fetch manifest {slug}")
             manifest = self.client.latest_manifest(slug)
-            game_dir = prepare_reinstall(
-                manifest,
-                self.bridge.log.emit,
-                selected_optional_mod_ids=selected_optional_mod_ids,
-            )
+            game_dir = prepare_reinstall(manifest, self.bridge.log.emit, selected_optional_mod_ids=selected_optional_mod_ids)
             install_mod_loader(manifest, game_dir, self.bridge.log.emit, self.bridge.progress.emit)
             sync_manifest(
                 manifest,
@@ -812,10 +832,10 @@ class LauncherWindow(QWidget):
 
         self.run_bg(task)
 
-    def delete_selected(self) -> None:
+    @Slot()
+    def deleteSelected(self) -> None:
         slug = self.selected_slug()
         if not slug:
-            QMessageBox.warning(self, "BebraLand", "Choose pack first")
             return
         profile = self.selected_profile() or {}
         name = profile.get("name") or slug
@@ -823,11 +843,7 @@ class LauncherWindow(QWidget):
         answer = QMessageBox.question(
             self,
             "BebraLand delete",
-            (
-                f"Delete local pack '{name}' from this computer?\n\n"
-                f"This removes everything in:\n{path}\n\n"
-                "This cannot be undone."
-            ),
+            f"Delete local pack '{name}' from this computer?\n\n{path}\n\nThis cannot be undone.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -839,31 +855,10 @@ class LauncherWindow(QWidget):
 
         self.run_bg(task)
 
-    def check_update(self) -> None:
-        manifest_url = update_manifest_url()
-        if not manifest_url:
-            return
-
-        def task() -> None:
-            release = get_update_release(
-                __version__,
-                manifest_url,
-                self.bridge.log.emit,
-                platform_id(),
-                build_update_id(),
-            )
-            if not release:
-                return
-            self.bridge.log.emit(f"Update available: {display_version(release)}")
-            self.bridge.install_update.emit(release)
-
-        self.run_bg(task, popup=False)
-
     def install_update(self, release: dict[str, Any]) -> None:
         def task() -> None:
             self.bridge.log.emit(f"Install launcher update {display_version(release)}")
             downloaded = download_release(release, self.bridge.log.emit)
-            self.bridge.log.emit(f"Downloaded: {downloaded}")
             if can_self_replace():
                 self.bridge.log.emit("Restart launcher to apply update")
                 self.bridge.replace_update.emit(downloaded)

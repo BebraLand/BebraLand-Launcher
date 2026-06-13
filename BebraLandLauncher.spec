@@ -36,7 +36,10 @@ a = Analysis(
     ['launcher_gui.py'],
     pathex=[],
     binaries=windows_ssl_binaries(),
-    datas=[],
+    datas=[
+        ('background_for_launcher.jpg', '.'),
+        ('resources', 'resources'),
+    ],
     hiddenimports=['ssl', '_ssl', '_hashlib'],
     hookspath=[],
     hooksconfig={},

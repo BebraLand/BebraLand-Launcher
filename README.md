@@ -85,13 +85,13 @@ On start launcher downloads `latest.json` from GitHub Releases:
 }
 ```
 
-If `version` is newer than the bundled launcher version, the launcher asks user to update, downloads the new EXE into `%APPDATA%\BebraLandLauncher\updates`, verifies `sha256`, then starts that downloaded EXE in updater mode:
+If `version` is newer than the bundled launcher version, the launcher updates automatically, downloads the new EXE into `%APPDATA%\BebraLandLauncher\updates`, verifies `sha256`, then starts that downloaded EXE in updater mode:
 
 ```text
 BebraLandLauncher.exe --apply-update --target <old-exe> --pid <old-pid>
 ```
 
-The downloaded EXE waits for the old launcher to exit, moves old launcher to `BebraLandLauncher.exe.bak`, copies itself over the old path, and starts the updated launcher.
+The downloaded EXE waits for the old launcher to exit, copies itself over the old path through a temporary `.new` file, removes that temporary file on failure, and starts the updated launcher. It does not leave a `.bak` file. The normal launcher cleans `%APPDATA%\BebraLandLauncher\updates` on startup and before downloading another update.
 
 Dev builds have no update channel unless `BEBRALAND_UPDATE_MANIFEST_URL` is set. In dev mode, launcher downloads the update but does not replace itself.
 

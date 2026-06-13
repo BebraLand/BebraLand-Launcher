@@ -81,6 +81,7 @@ def sha256_file(path: Path) -> str:
 
 
 def download_release(release: dict[str, Any], status: Status) -> Path:
+    cleanup_update_cache()
     updates_dir = launcher_data_dir() / "updates"
     updates_dir.mkdir(parents=True, exist_ok=True)
     filename = Path(str(release["url"]).split("?")[0]).name or f"BebraLandLauncher-{release['version']}.exe"
@@ -105,6 +106,32 @@ def download_release(release: dict[str, Any], status: Status) -> Path:
             raise ValueError(f"Update hash mismatch: {actual} != {expected}")
     tmp.replace(target)
     return target
+
+
+def cleanup_update_cache(status: Status | None = None) -> None:
+    updates_dir = launcher_data_dir() / "updates"
+    if not updates_dir.exists():
+        return
+    current = Path(sys.executable).resolve()
+    removed = 0
+    for item in updates_dir.iterdir():
+        try:
+            if item.resolve() == current:
+                continue
+            if item.is_file() or item.is_symlink():
+                item.unlink()
+                removed += 1
+            elif item.is_dir():
+                shutil.rmtree(item)
+                removed += 1
+        except OSError:
+            continue
+    try:
+        updates_dir.rmdir()
+    except OSError:
+        pass
+    if removed and status:
+        status(f"Cleaned launcher update cache: {removed}")
 
 
 def can_self_replace() -> bool:
@@ -175,19 +202,14 @@ def apply_downloaded_update(target: Path, old_pid: int, relaunch: bool = True) -
         raise RuntimeError("Update source and target are the same file")
 
     wait_for_process_exit(old_pid)
-    backup = target.with_suffix(target.suffix + ".bak")
-    moved_target = False
+    tmp_target = target.with_name(f"{target.name}.new")
 
     try:
-        if backup.exists():
-            backup.unlink()
-        if target.exists():
-            target.replace(backup)
-            moved_target = True
-        shutil.copy2(source, target)
+        tmp_target.unlink(missing_ok=True)
+        shutil.copy2(source, tmp_target)
+        os.replace(tmp_target, target)
     except Exception:
-        if moved_target and backup.exists() and not target.exists():
-            backup.replace(target)
+        tmp_target.unlink(missing_ok=True)
         raise
 
     if relaunch:

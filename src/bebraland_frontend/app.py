@@ -43,6 +43,7 @@ from .runtime import (
 from .settings import load_settings, save_settings
 from .updater import (
     can_self_replace,
+    cleanup_update_cache,
     download_release,
     get_update_release,
     replace_current_exe,
@@ -124,7 +125,7 @@ class Bridge(QObject):
     error = Signal(str)
     profiles = Signal(list)
     auth = Signal(dict)
-    ask_update = Signal(dict)
+    install_update = Signal(dict)
     replace_update = Signal(object)
     progress = Signal(int, int, str)
 
@@ -150,7 +151,7 @@ class LauncherWindow(QWidget):
         self.bridge.error.connect(self.show_error)
         self.bridge.profiles.connect(self.set_profiles)
         self.bridge.auth.connect(self.set_auth)
-        self.bridge.ask_update.connect(self.ask_update)
+        self.bridge.install_update.connect(self.install_update)
         self.bridge.replace_update.connect(replace_current_exe)
         self.bridge.progress.connect(self.set_progress)
 
@@ -267,6 +268,10 @@ class LauncherWindow(QWidget):
         self.status.setMinimumWidth(0)
         self.status.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         status_row.addWidget(self.status, 1)
+        self.version_label = QLabel(f"v{__version__}")
+        self.version_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.version_label.setStyleSheet("color: #4b5563;")
+        status_row.addWidget(self.version_label)
         self.progress_detail = QLabel("")
         self.progress_detail.setFixedWidth(PROGRESS_DETAIL_WIDTH)
         self.progress_detail.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -843,20 +848,13 @@ class LauncherWindow(QWidget):
             if not release:
                 return
             self.bridge.log.emit(f"Update available: {release['version']}")
-            self.bridge.ask_update.emit(release)
+            self.bridge.install_update.emit(release)
 
         self.run_bg(task, popup=False)
 
-    def ask_update(self, release: dict[str, Any]) -> None:
-        answer = QMessageBox.question(
-            self,
-            "BebraLand update",
-            f"Install launcher {release['version']}?",
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return
-
+    def install_update(self, release: dict[str, Any]) -> None:
         def task() -> None:
+            self.bridge.log.emit(f"Install launcher update {release['version']}")
             downloaded = download_release(release, self.bridge.log.emit)
             self.bridge.log.emit(f"Downloaded: {downloaded}")
             if can_self_replace():
@@ -875,6 +873,7 @@ class LauncherWindow(QWidget):
 def main() -> None:
     if run_update_helper_from_cli():
         return
+    cleanup_update_cache()
     app = QApplication(sys.argv)
     window = LauncherWindow()
     window.show()

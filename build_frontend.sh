@@ -13,8 +13,14 @@ if ! command -v uv >/dev/null 2>&1; then
     exit 1
 fi
 
+echo "Install Python runtime..."
+uv python install 3.13
+
 echo "Sync build dependencies..."
 uv sync --extra build
+
+echo "Write build metadata..."
+uv run python scripts/write_build_info.py
 
 echo "Build launcher..."
 uv run pyinstaller --noconfirm BebraLandLauncher.spec

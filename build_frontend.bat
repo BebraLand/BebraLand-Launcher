@@ -13,8 +13,16 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo Install Python runtime...
+uv python install 3.13
+if errorlevel 1 exit /b %ERRORLEVEL%
+
 echo Sync build dependencies...
 uv sync --extra build
+if errorlevel 1 exit /b %ERRORLEVEL%
+
+echo Write build metadata...
+uv run python scripts\write_build_info.py
 if errorlevel 1 exit /b %ERRORLEVEL%
 
 echo Build BebraLandLauncher.exe...

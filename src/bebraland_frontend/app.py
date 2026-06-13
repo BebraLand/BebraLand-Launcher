@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 
 from . import __version__
 from .api import ApiClient
-from .config import DEFAULT_SERVER_URL
+from .config import DEFAULT_SERVER_URL, update_manifest_url
 from .runtime import (
     delete_instance,
     install_mod_loader,
@@ -38,7 +38,13 @@ from .runtime import (
     sync_manifest,
 )
 from .settings import load_settings, save_settings
-from .updater import can_self_replace, download_release, replace_current_exe
+from .updater import (
+    can_self_replace,
+    download_release,
+    get_update_release,
+    replace_current_exe,
+    run_update_helper_from_cli,
+)
 
 
 DEFAULT_RECOMMENDED_RAM_MB = 2048
@@ -594,18 +600,18 @@ class LauncherWindow(QWidget):
         self.run_bg(task)
 
     def check_update(self) -> None:
-        self.reset_client()
+        manifest_url = update_manifest_url()
+        if not manifest_url:
+            return
 
         def task() -> None:
-            payload = self.client.check_update(__version__)
-            if not payload.get("update_available"):
-                self.bridge.log.emit("Launcher up to date")
+            release = get_update_release(__version__, manifest_url, self.bridge.log.emit)
+            if not release:
                 return
-            release = payload["release"]
             self.bridge.log.emit(f"Update available: {release['version']}")
             self.bridge.ask_update.emit(release)
 
-        self.run_bg(task)
+        self.run_bg(task, popup=False)
 
     def ask_update(self, release: dict[str, Any]) -> None:
         answer = QMessageBox.question(
@@ -633,6 +639,8 @@ class LauncherWindow(QWidget):
 
 
 def main() -> None:
+    if run_update_helper_from_cli():
+        return
     app = QApplication(sys.argv)
     window = LauncherWindow()
     window.show()

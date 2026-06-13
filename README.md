@@ -70,7 +70,62 @@ Output: `dist\BebraLandLauncher.exe`.
 
 ## Update flow
 
-On start launcher asks backend for update metadata over WebSocket. If backend release metadata has newer version, launcher downloads EXE, verifies SHA256, and if running as frozen Windows EXE replaces itself through small restart script.
+Release builds are one-file Windows EXEs. No separate updater is shipped.
+
+On start launcher downloads `latest.json` from GitHub Releases:
+
+```json
+{
+  "version": "0.2.0",
+  "platform": "windows",
+  "url": "https://github.com/OWNER/REPO/releases/download/v0.2.0/BebraLandLauncher.exe",
+  "sha256": "..."
+}
+```
+
+If `version` is newer than the bundled launcher version, the launcher asks user to update, downloads the new EXE into `%APPDATA%\BebraLandLauncher\updates`, verifies `sha256`, then starts that downloaded EXE in updater mode:
+
+```text
+BebraLandLauncher.exe --apply-update --target <old-exe> --pid <old-pid>
+```
+
+The downloaded EXE waits for the old launcher to exit, moves old launcher to `BebraLandLauncher.exe.bak`, copies itself over the old path, and starts the updated launcher.
+
+Dev builds have no update channel unless `BEBRALAND_UPDATE_MANIFEST_URL` is set. In dev mode, launcher downloads the update but does not replace itself.
+
+## GitHub release
+
+This repo includes `.github/workflows/release.yml`.
+
+Release by tag:
+
+```powershell
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+Or run the `Release launcher` workflow manually and enter version like `0.2.0`.
+
+GitHub Actions will:
+
+1. install uv-managed Python 3.13;
+2. build `dist\BebraLandLauncher.exe`;
+3. create `dist\latest.json` with SHA256;
+4. publish both files to GitHub Release.
+
+Players download only `BebraLandLauncher.exe` from the latest release. Future release builds auto-check:
+
+```text
+https://github.com/<owner>/<repo>/releases/latest/download/latest.json
+```
+
+Local test build with update channel:
+
+```powershell
+$env:BEBRALAND_BUILD_VERSION = "0.1.0"
+$env:BEBRALAND_UPDATE_MANIFEST_URL = "https://github.com/OWNER/REPO/releases/latest/download/latest.json"
+.\build_frontend.bat
+```
 
 ## Auth
 

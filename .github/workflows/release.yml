@@ -1,0 +1,70 @@
+name: Release launcher
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example 0.2.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ inputs.version }}"
+          }
+          $version = $version.Trim()
+          if ($version.StartsWith("v")) {
+            $version = $version.Substring(1)
+          }
+          if (-not $version) {
+            throw "Release version is empty"
+          }
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "RELEASE_TAG=v$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "BEBRALAND_BUILD_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "BEBRALAND_UPDATE_MANIFEST_URL=https://github.com/${{ github.repository }}/releases/latest/download/latest.json" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build EXE
+        shell: cmd
+        run: build_frontend.bat
+
+      - name: Create update manifest
+        shell: pwsh
+        run: |
+          uv run python scripts\make_release_manifest.py `
+            --version "$env:APP_VERSION" `
+            --repo "${{ github.repository }}" `
+            --tag "$env:RELEASE_TAG" `
+            --exe "dist\BebraLandLauncher.exe" `
+            --output "dist\latest.json"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: BebraLand Launcher ${{ env.APP_VERSION }}
+          files: |
+            dist/BebraLandLauncher.exe
+            dist/latest.json

@@ -124,8 +124,11 @@ Item {
                     width: 156
                     height: 50
                     radius: 25
-                    color: playMainMouse.containsMouse || playDropMouse.containsMouse ? theme.primaryHover : theme.primary
+                    color: playMouse.active ? theme.primaryHover : theme.primary
                     clip: true
+
+                    property bool mainActive: playMouse.active && playMouse.mouseX < 113
+                    property bool dropActive: playMouse.active && playMouse.mouseX >= 113
 
                     function roundedContains(x, y, width, height, radius) {
                         if (x < 0 || y < 0 || x > width || y > height)
@@ -144,6 +147,25 @@ Item {
 
                     function containsPoint(point) {
                         return roundedContains(point.x, point.y, width, height, radius)
+                    }
+
+                    MouseArea {
+                        id: playMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: active ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        acceptedButtons: Qt.LeftButton
+
+                        readonly property bool active: containsMouse && playSplit.roundedContains(mouseX, mouseY, playSplit.width, playSplit.height, playSplit.radius)
+
+                        onClicked: (mouse) => {
+                            if (!playSplit.roundedContains(mouse.x, mouse.y, playSplit.width, playSplit.height, playSplit.radius))
+                                return
+                            if (mouse.x >= 113)
+                                playMenu.open()
+                            else
+                                controller.launchSelected()
+                        }
                     }
 
                     Rectangle {
@@ -181,20 +203,6 @@ Item {
                                 font.weight: Font.Bold
                             }
                         }
-
-                        MouseArea {
-                            id: playMainMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            containmentMask: QtObject {
-                                function contains(point) {
-                                    var localPoint = playMainMouse.mapToItem(playSplit, point.x, point.y)
-                                    return playSplit.containsPoint(localPoint)
-                                }
-                            }
-                            onClicked: controller.launchSelected()
-                        }
                     }
 
                     Rectangle {
@@ -217,20 +225,6 @@ Item {
                             height: 18
                             source: root.state.assetsUrl + "/Images/down.svg"
                             fillMode: Image.PreserveAspectFit
-                        }
-
-                        MouseArea {
-                            id: playDropMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            containmentMask: QtObject {
-                                function contains(point) {
-                                    var localPoint = playDropMouse.mapToItem(playSplit, point.x, point.y)
-                                    return playSplit.containsPoint(localPoint)
-                                }
-                            }
-                            onClicked: playMenu.open()
                         }
                     }
 
@@ -325,12 +319,26 @@ Item {
                 model: root.news
 
                 delegate: Rectangle {
+                    id: newsCard
+
                     width: newsBlock.width
                     height: 134
                     radius: 20
                     color: theme.frame
                     border.width: 1
                     border.color: "#00000000"
+
+                    function roundedContains(x, y, width, height, radius) {
+                        if (x < 0 || y < 0 || x > width || y > height)
+                            return false
+
+                        var r = Math.max(0, Math.min(radius, width / 2, height / 2))
+                        var cx = Math.max(r, Math.min(x, width - r))
+                        var cy = Math.max(r, Math.min(y, height - r))
+                        var dx = x - cx
+                        var dy = y - cy
+                        return dx * dx + dy * dy <= r * r
+                    }
 
                     Column {
                         anchors.fill: parent
@@ -369,10 +377,15 @@ Item {
                     }
 
                     MouseArea {
+                        id: newsMouse
                         anchors.fill: parent
-                        cursorShape: modelData.url ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: {
-                            if (modelData.url)
+                        hoverEnabled: true
+                        cursorShape: active ? Qt.PointingHandCursor : Qt.ArrowCursor
+
+                        readonly property bool active: !!modelData.url && containsMouse && newsCard.roundedContains(mouseX, mouseY, newsCard.width, newsCard.height, newsCard.radius)
+
+                        onClicked: (mouse) => {
+                            if (modelData.url && newsCard.roundedContains(mouse.x, mouse.y, newsCard.width, newsCard.height, newsCard.radius))
                                 controller.openUrl(modelData.url)
                         }
                     }

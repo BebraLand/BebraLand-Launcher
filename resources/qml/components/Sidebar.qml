@@ -90,14 +90,16 @@ Item {
                         }
 
                         MouseArea {
+                            id: profileMouse
                             anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            containmentMask: QtObject {
-                                function contains(point) {
-                                    return profileButton.roundedContains(point.x, point.y, profileButton.width, profileButton.height, profileButton.radius)
-                                }
-                            }
-                            onClicked: {
+                            hoverEnabled: true
+                            cursorShape: active ? Qt.PointingHandCursor : Qt.ArrowCursor
+
+                            readonly property bool active: containsMouse && profileButton.roundedContains(mouseX, mouseY, profileButton.width, profileButton.height, profileButton.radius)
+
+                            onClicked: (mouse) => {
+                                if (!profileButton.roundedContains(mouse.x, mouse.y, profileButton.width, profileButton.height, profileButton.radius))
+                                    return
                                 controller.selectProfile(modelData.slug || "")
                                 root.pageRequested("home")
                             }

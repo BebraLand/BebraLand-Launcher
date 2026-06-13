@@ -146,6 +146,18 @@ Item {
                             border.width: 1
                             border.color: theme.frameBorder
 
+                            function roundedContains(x, y, width, height, radius) {
+                                if (x < 0 || y < 0 || x > width || y > height)
+                                    return false
+
+                                var r = Math.max(0, Math.min(radius, width / 2, height / 2))
+                                var cx = Math.max(r, Math.min(x, width - r))
+                                var cy = Math.max(r, Math.min(y, height - r))
+                                var dx = x - cx
+                                var dy = y - cy
+                                return dx * dx + dy * dy <= r * r
+                            }
+
                             Row {
                                 anchors.fill: parent
                                 anchors.margins: 20
@@ -190,9 +202,18 @@ Item {
                             }
 
                             MouseArea {
+                                id: rowMouse
                                 anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: controller.toggleOptionalMod(modelData.id || "", !modelData.enabled)
+                                hoverEnabled: true
+                                cursorShape: active ? Qt.PointingHandCursor : Qt.ArrowCursor
+
+                                readonly property bool active: containsMouse && rowCard.roundedContains(mouseX, mouseY, rowCard.width, rowCard.height, rowCard.radius)
+
+                                onClicked: (mouse) => {
+                                    if (!rowCard.roundedContains(mouse.x, mouse.y, rowCard.width, rowCard.height, rowCard.radius))
+                                        return
+                                    controller.toggleOptionalMod(modelData.id || "", !modelData.enabled)
+                                }
                             }
                         }
                     }

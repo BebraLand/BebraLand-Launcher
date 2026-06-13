@@ -1,7 +1,6 @@
 import QtQuick
-import QtQuick.Controls
 
-Button {
+Item {
     id: root
 
     property string iconSource: ""
@@ -9,14 +8,17 @@ Button {
     property string kind: "secondary"
     property int radius: 25
     property int gap: 10
+    property string text: ""
+    property font font: Qt.font({
+        family: theme.fontFamily,
+        pixelSize: 14,
+        weight: Font.Bold
+    })
+    readonly property bool hovered: buttonMouse.containsMouse && root.roundedContains(buttonMouse.mouseX, buttonMouse.mouseY, root.width, root.height, root.radius)
 
-    focusPolicy: Qt.NoFocus
-    hoverEnabled: true
-    padding: 0
+    signal clicked(var mouse)
+
     height: 50
-    font.family: theme.fontFamily
-    font.pixelSize: 14
-    font.weight: Font.Bold
     implicitWidth: Math.max(root.text.length > 0 ? 120 : root.height, contentRow.implicitWidth + (root.text.length > 0 ? 36 : 0))
 
     Theme { id: theme }
@@ -42,6 +44,12 @@ Button {
         return dx * dx + dy * dy <= r * r
     }
 
+    function trigger(mouse) {
+        if (!root.enabled || !root.roundedContains(mouse.x, mouse.y, root.width, root.height, root.radius))
+            return
+        root.clicked(mouse)
+    }
+
     function baseColor() {
         if (!root.enabled)
             return theme.formHover
@@ -56,7 +64,8 @@ Button {
         return root.hovered ? theme.secondaryHover : theme.secondary
     }
 
-    background: Rectangle {
+    Rectangle {
+        anchors.fill: parent
         radius: root.radius
         color: root.baseColor()
         border.width: root.kind === "additional" ? 1 : 0
@@ -64,36 +73,40 @@ Button {
         opacity: root.enabled ? 1 : 0.55
     }
 
-    contentItem: Item {
-        implicitWidth: contentRow.implicitWidth
-        implicitHeight: root.height
+    Row {
+        id: contentRow
+        anchors.centerIn: parent
+        spacing: root.iconSource !== "" && root.text !== "" ? root.gap : 0
 
-        Row {
-            id: contentRow
-            anchors.centerIn: parent
-            spacing: root.iconSource !== "" && root.text !== "" ? root.gap : 0
-
-            Image {
-                visible: root.iconSource !== ""
-                source: root.iconSource
-                width: root.iconSize
-                height: root.iconSize
-                sourceSize.width: root.iconSize
-                sourceSize.height: root.iconSize
-                fillMode: Image.PreserveAspectFit
-                opacity: root.enabled ? 1 : 0.5
-            }
-
-            Text {
-                visible: root.text !== ""
-                text: root.text
-                color: theme.headline
-                font.family: theme.fontFamily
-                font.pixelSize: root.font.pixelSize
-                font.weight: root.font.weight
-                elide: Text.ElideRight
-                verticalAlignment: Text.AlignVCenter
-            }
+        Image {
+            visible: root.iconSource !== ""
+            source: root.iconSource
+            width: root.iconSize
+            height: root.iconSize
+            sourceSize.width: root.iconSize
+            sourceSize.height: root.iconSize
+            fillMode: Image.PreserveAspectFit
+            opacity: root.enabled ? 1 : 0.5
         }
+
+        Text {
+            visible: root.text !== ""
+            text: root.text
+            color: theme.headline
+            font.family: root.font.family
+            font.pixelSize: root.font.pixelSize
+            font.weight: root.font.weight
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignVCenter
+        }
+    }
+
+    MouseArea {
+        id: buttonMouse
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: root.hovered ? Qt.PointingHandCursor : Qt.ArrowCursor
+        acceptedButtons: Qt.LeftButton
+        onClicked: (mouse) => root.trigger(mouse)
     }
 }

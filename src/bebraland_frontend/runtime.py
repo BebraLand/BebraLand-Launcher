@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 import fnmatch
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import threading
@@ -52,6 +54,7 @@ REINSTALL_SYSTEM_PATHS = [
     "runtime",
     "runtimes",
 ]
+AUTHLIB_ARTIFACT_URL = "https://authlib-injector.yushi.moe/artifact/latest.json"
 
 
 def format_bytes(value: float) -> str:
@@ -620,17 +623,105 @@ def ram_jvm_arguments(ram_mb: int | None) -> list[str]:
     return [f"-Xmx{value}M", f"-Xms{min(512, value)}M"]
 
 
+def authlib_api_url(server_url: str) -> str:
+    return f"{server_url.rstrip('/')}/api/yggdrasil/"
+
+
+def authlib_cache_dir() -> Path:
+    path = launcher_data_dir() / "authlib-injector"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def fetch_authlib_metadata(api_url: str, status: Status) -> str:
+    status("Fetch authlib metadata")
+    with requests.get(api_url, timeout=20) as response:
+        response.raise_for_status()
+        metadata = response.json()
+    compact = json.dumps(metadata, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return base64.b64encode(compact).decode("ascii")
+
+
+def ensure_authlib_injector(status: Status, progress: Progress | None = None) -> Path:
+    override = os.environ.get("AUTHLIB_INJECTOR_JAR", "").strip()
+    if override:
+        path = Path(override).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"AUTHLIB_INJECTOR_JAR not found: {path}")
+        return path
+
+    cache_dir = authlib_cache_dir()
+    artifact_url = os.environ.get("AUTHLIB_INJECTOR_ARTIFACT_URL", AUTHLIB_ARTIFACT_URL)
+    try:
+        status("Check authlib-injector")
+        with requests.get(artifact_url, timeout=20) as response:
+            response.raise_for_status()
+            artifact = response.json()
+        version = str(artifact["version"])
+        checksum = str(artifact["checksums"]["sha256"])
+        jar_path = cache_dir / f"authlib-injector-{version}.jar"
+        if jar_path.is_file() and sha256_file(jar_path) == checksum:
+            status(f"Use authlib-injector {version}")
+            return jar_path
+        download_file(str(artifact["download_url"]), jar_path, checksum, status, progress)
+        (cache_dir / "latest.json").write_text(json.dumps(artifact, indent=2), encoding="utf-8")
+        status(f"Downloaded authlib-injector {version}")
+        return jar_path
+    except Exception as exc:
+        cached = sorted(cache_dir.glob("authlib-injector-*.jar"), key=lambda path: path.stat().st_mtime, reverse=True)
+        if cached:
+            status(f"Use cached authlib-injector after update check failed: {exc}")
+            return cached[0]
+        raise
+
+
+def authlib_jvm_arguments(
+    server_url: str,
+    status: Status,
+    progress: Progress | None = None,
+) -> list[str]:
+    api_url = authlib_api_url(server_url)
+    jar_path = ensure_authlib_injector(status, progress)
+    prefetched = fetch_authlib_metadata(api_url, status)
+    return [
+        f"-javaagent:{jar_path}={api_url}",
+        f"-Dauthlibinjector.yggdrasil.prefetched={prefetched}",
+        "-Dauthlibinjector.noLogFile",
+    ]
+
+
+def minecraft_profile_values(
+    username: str | None,
+    access_token: str | None,
+    minecraft_profile: dict[str, Any] | None,
+) -> tuple[str, str, str]:
+    if not access_token:
+        raise ValueError("Login required before launching Minecraft")
+    profile = minecraft_profile or {}
+    name = str(profile.get("name") or username or "").strip()
+    profile_id = str(profile.get("id") or profile.get("uuid") or "").replace("-", "").strip()
+    if not name:
+        raise ValueError("Minecraft profile has no username")
+    if len(profile_id) != 32:
+        raise ValueError("Minecraft profile has no UUID")
+    return name, profile_id, access_token
+
+
 def launch_minecraft(
     manifest: dict[str, Any],
     game_dir: Path,
-    username: str,
+    username: str | None,
     status: Status,
     progress: Progress | None = None,
     installed_version: str | None = None,
     ram_mb: int | None = None,
+    server_url: str | None = None,
+    access_token: str | None = None,
+    minecraft_profile: dict[str, Any] | None = None,
 ) -> subprocess.Popen:
     if installed_version is None:
         installed_version = install_mod_loader(manifest, game_dir, status, progress)
+    mc_username, mc_uuid, mc_token = minecraft_profile_values(username, access_token, minecraft_profile)
     options = minecraft_launcher_lib.utils.generate_test_options()
     jvm_arguments = list(options.get("jvmArguments") or [])
     jvm_arguments = [
@@ -638,10 +729,14 @@ def launch_minecraft(
         for argument in jvm_arguments
         if not argument.startswith("-Xmx") and not argument.startswith("-Xms")
     ]
+    if server_url:
+        jvm_arguments.extend(authlib_jvm_arguments(server_url, status, progress))
     jvm_arguments.extend(ram_jvm_arguments(ram_mb))
     options.update(
         {
-            "username": username or "BebraPlayer",
+            "username": mc_username,
+            "uuid": mc_uuid,
+            "token": mc_token,
             "gameDirectory": str(game_dir),
             "jvmArguments": jvm_arguments,
             "launcherName": "BebraLand Launcher",
@@ -653,6 +748,9 @@ def launch_minecraft(
         str(game_dir),
         options,
     )
+    for index, argument in enumerate(command[:-1]):
+        if argument == "--userType":
+            command[index + 1] = "mojang"
     if ram_mb:
         status(f"Start Minecraft with {int(ram_mb)} MB RAM")
     else:

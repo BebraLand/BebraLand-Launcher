@@ -23,7 +23,7 @@ When user clicks `Launch`:
 3. Frontend uses existing Minecraft/modloader install if present; otherwise installs it locally from profile metadata.
 4. Frontend checks pack files by SHA256.
 5. Missing/changed pack files download from backend `/files/...`.
-6. Launcher starts installed Minecraft/modloader profile with selected RAM.
+6. Launcher downloads/caches authlib-injector, fetches backend Yggdrasil metadata, and starts installed Minecraft/modloader profile with selected RAM and Azuriom credentials.
 
 Launcher keeps `/api/v1/ws` open while running. If backend shell/CLI creates, deletes, clones, edits RAM, or builds pack while server is running, backend pushes `profiles.changed` and the pack combo updates live.
 
@@ -74,4 +74,11 @@ On start launcher asks backend for update metadata over WebSocket. If backend re
 
 Azuriom auth works through backend. Backend Azuriom URL lives in backend `.env` as `AZURIOM_URL=...`.
 
-Minecraft launch still uses `minecraft-launcher-lib.utils.generate_test_options()` for prototype mode. Next step: map Azuriom/Microsoft profile data into real `username`, `uuid`, `token` for `minecraft_launcher_lib.command.get_minecraft_command`.
+Minecraft launch uses the verified Azuriom access token as the auth token and the backend-provided Minecraft profile as `username`/`uuid`. The launcher adds:
+
+```text
+-javaagent:%APPDATA%\BebraLandLauncher\authlib-injector\authlib-injector-<version>.jar=<server>/api/yggdrasil/
+-Dauthlibinjector.yggdrasil.prefetched=<metadata>
+```
+
+Set `AUTHLIB_INJECTOR_JAR` if you want to force a local jar instead of downloading from `https://authlib-injector.yushi.moe/artifact/latest.json`.

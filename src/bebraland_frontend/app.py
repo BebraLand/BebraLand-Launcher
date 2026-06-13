@@ -130,6 +130,7 @@ class LauncherWindow(QWidget):
         self.settings = load_settings()
         self.client = ApiClient(self.settings.get("server_url", DEFAULT_SERVER_URL), self.settings.get("access_token"))
         self.auth_user: dict[str, Any] | None = self.settings.get("user")
+        self.minecraft_profile: dict[str, Any] | None = self.settings.get("minecraft_profile")
         self.profiles: list[dict[str, Any]] = []
         self.max_ram_mb = launcher_ram_limit_mb()
 
@@ -428,10 +429,13 @@ class LauncherWindow(QWidget):
 
     def set_auth(self, payload: dict[str, Any]) -> None:
         self.auth_user = payload["user"]
+        self.minecraft_profile = payload.get("minecraft_profile") or self.minecraft_profile
         if payload.get("access_token"):
             self.client.token = payload["access_token"]
             self.settings["access_token"] = payload["access_token"]
         self.settings["user"] = self.auth_user
+        if self.minecraft_profile:
+            self.settings["minecraft_profile"] = self.minecraft_profile
         save_settings(self.settings)
         self.show_logged_user(self.auth_user, prefix="Logged in")
 
@@ -456,8 +460,10 @@ class LauncherWindow(QWidget):
                 if status_code in {401, 403} or (response is not None and response.status_code in {401, 403}):
                     self.settings.pop("access_token", None)
                     self.settings.pop("user", None)
+                    self.settings.pop("minecraft_profile", None)
                     save_settings(self.settings)
                     self.client.token = None
+                    self.minecraft_profile = None
                     self.bridge.log.emit("Saved login expired")
                 else:
                     self.bridge.log.emit("Saved login not verified")
@@ -487,6 +493,12 @@ class LauncherWindow(QWidget):
         if not slug:
             QMessageBox.warning(self, "BebraLand", "Choose pack first")
             return
+        if not self.client.token or not self.auth_user:
+            QMessageBox.warning(self, "BebraLand", "Login Azuriom first")
+            return
+        if not self.minecraft_profile:
+            QMessageBox.warning(self, "BebraLand", "Saved login is not verified yet")
+            return
         profile = self.selected_profile()
         recommended_ram_mb = self.recommended_ram_mb(profile)
         ram_mb = self.selected_ram_mb()
@@ -515,6 +527,9 @@ class LauncherWindow(QWidget):
                 self.bridge.progress.emit,
                 installed_version=installed_version,
                 ram_mb=ram_mb,
+                server_url=self.client.server_url,
+                access_token=self.client.token,
+                minecraft_profile=self.minecraft_profile,
             )
 
         self.run_bg(task)

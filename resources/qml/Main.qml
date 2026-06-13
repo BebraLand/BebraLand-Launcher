@@ -56,6 +56,7 @@ Rectangle {
     }
 
     MouseArea {
+        id: titleDragArea
         z: 20
         anchors.top: parent.top
         anchors.left: parent.left
@@ -64,7 +65,10 @@ Rectangle {
         anchors.rightMargin: 150
         height: 44
         acceptedButtons: Qt.LeftButton
-        onPressed: controller.startWindowMove()
+        onPressed: function(mouse) {
+            var point = titleDragArea.mapToItem(root, mouse.x, mouse.y)
+            controller.startWindowMove(point.x, point.y)
+        }
     }
 
     Loader {

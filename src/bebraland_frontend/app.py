@@ -12,8 +12,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
-from PySide6.QtCore import QPoint, Property, QObject, Qt, QUrl, Signal, Slot
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QPoint, Property, QObject, QRect, Qt, QUrl, Signal, Slot
+from PySide6.QtGui import QCursor, QDesktopServices
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QVBoxLayout, QWidget
 
@@ -152,6 +152,7 @@ class LauncherWindow(QWidget):
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.resize(1000, 600)
         self.setMinimumSize(900, 540)
+        self._normal_geometry = QRect(self.geometry())
         register_fonts(self)
 
         self.settings = load_settings()
@@ -241,6 +242,47 @@ class LauncherWindow(QWidget):
         if bottom:
             return True, HTBOTTOM
         return False, 0
+
+    def moveEvent(self, event: Any) -> None:
+        super().moveEvent(event)
+        self.remember_normal_geometry()
+
+    def resizeEvent(self, event: Any) -> None:
+        super().resizeEvent(event)
+        self.remember_normal_geometry()
+
+    def remember_normal_geometry(self) -> None:
+        if self.isMaximized() or self.isMinimized():
+            return
+        geometry = self.geometry()
+        if geometry.width() > 0 and geometry.height() > 0:
+            self._normal_geometry = QRect(geometry)
+
+    def restore_for_title_drag(self, root_x: float, root_y: float) -> None:
+        normal_geometry = QRect(self._normal_geometry)
+        if normal_geometry.width() <= 0 or normal_geometry.height() <= 0:
+            normal_geometry = self.normalGeometry()
+        if normal_geometry.width() <= 0 or normal_geometry.height() <= 0:
+            normal_geometry = QRect(0, 0, 1000, 600)
+
+        cursor_pos = QCursor.pos()
+        screen = QApplication.screenAt(cursor_pos) or self.screen() or QApplication.primaryScreen()
+        screen_geometry = screen.availableGeometry() if screen else None
+        ratio = max(0.0, min(1.0, root_x / max(1, self.width()))) if root_x >= 0 else 0.5
+        title_offset_y = max(0, int(root_y)) if root_y >= 0 else WINDOW_RESIZE_MARGIN
+        x = cursor_pos.x() - round(normal_geometry.width() * ratio)
+        y = cursor_pos.y() - title_offset_y
+
+        if screen_geometry:
+            max_x = screen_geometry.right() - normal_geometry.width() + 1
+            max_y = screen_geometry.bottom() - normal_geometry.height() + 1
+            x = max(screen_geometry.left(), min(x, max_x))
+            y = max(screen_geometry.top(), min(y, max_y))
+
+        self.showNormal()
+        QApplication.processEvents()
+        self.setGeometry(x, y, normal_geometry.width(), normal_geometry.height())
+        QApplication.processEvents()
 
     def default_install_dir(self) -> Path:
         return launcher_data_dir() / "instances"
@@ -589,15 +631,22 @@ class LauncherWindow(QWidget):
 
     @Slot()
     def windowMaximize(self) -> None:
-        self.showNormal() if self.isMaximized() else self.showMaximized()
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.remember_normal_geometry()
+            self.showMaximized()
 
     @Slot()
     def windowClose(self) -> None:
         self.close()
 
-    @Slot()
-    def startWindowMove(self) -> None:
+    @Slot(float, float)
+    def startWindowMove(self, root_x: float = -1, root_y: float = -1) -> None:
         handle = self.windowHandle()
+        if self.isMaximized():
+            self.restore_for_title_drag(root_x, root_y)
+            handle = self.windowHandle()
         if handle:
             handle.startSystemMove()
 

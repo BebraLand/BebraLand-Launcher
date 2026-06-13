@@ -7,8 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version, for example 0.2.0"
+        description: "Display version shown in the launcher, for example 0.0.0.4"
         required: true
+        type: string
+      release_tag:
+        description: "Optional unique GitHub release tag. Empty = launcher-<run_number>"
+        required: false
         type: string
 
 permissions:
@@ -30,16 +34,26 @@ jobs:
         shell: bash
         run: |
           version="${GITHUB_REF_NAME}"
+          tag="${GITHUB_REF_NAME}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             version="${{ inputs.version }}"
+            tag="${{ inputs.release_tag }}"
+            if [ -z "$tag" ]; then
+              tag="launcher-${GITHUB_RUN_NUMBER}"
+            fi
           fi
           version="${version#v}"
+          tag="${tag#refs/tags/}"
           if [ -z "$version" ]; then
-            echo "Release version is empty" >&2
+            echo "Display version is empty" >&2
+            exit 1
+          fi
+          if [ -z "$tag" ]; then
+            echo "Release tag is empty" >&2
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
   build:
     needs: resolve
@@ -61,6 +75,8 @@ jobs:
       APP_VERSION: ${{ needs.resolve.outputs.version }}
       RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
       BEBRALAND_BUILD_VERSION: ${{ needs.resolve.outputs.version }}
+      BEBRALAND_UPDATE_ID: ${{ github.run_number }}
+      BEBRALAND_COMPAT_VERSION: 9999.${{ github.run_number }}
       BEBRALAND_RELEASE_PLATFORM: ${{ matrix.platform }}
       BEBRALAND_UPDATE_MANIFEST_URL: https://github.com/${{ github.repository }}/releases/latest/download/latest-${{ matrix.platform }}.json
 
@@ -101,6 +117,8 @@ jobs:
             --version "$env:APP_VERSION" `
             --repo "${{ github.repository }}" `
             --tag "$env:RELEASE_TAG" `
+            --update-id "$env:BEBRALAND_UPDATE_ID" `
+            --compat-version "$env:BEBRALAND_COMPAT_VERSION" `
             --platform "$env:BEBRALAND_RELEASE_PLATFORM" `
             --artifact "release\BebraLandLauncher-${env:BEBRALAND_RELEASE_PLATFORM}.exe" `
             --output "release\latest-${env:BEBRALAND_RELEASE_PLATFORM}.json"
@@ -117,6 +135,8 @@ jobs:
             --version "$APP_VERSION" \
             --repo "${{ github.repository }}" \
             --tag "$RELEASE_TAG" \
+            --update-id "$BEBRALAND_UPDATE_ID" \
+            --compat-version "$BEBRALAND_COMPAT_VERSION" \
             --platform "$BEBRALAND_RELEASE_PLATFORM" \
             --artifact "release/BebraLandLauncher-${BEBRALAND_RELEASE_PLATFORM}" \
             --output "release/latest-${BEBRALAND_RELEASE_PLATFORM}.json"

@@ -53,6 +53,9 @@ def default_artifact(platform_id: str) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", default=os.environ.get("BEBRALAND_BUILD_VERSION"), required=False)
+    parser.add_argument("--display-version", default=os.environ.get("BEBRALAND_DISPLAY_VERSION", ""))
+    parser.add_argument("--update-id", default=os.environ.get("BEBRALAND_UPDATE_ID", ""))
+    parser.add_argument("--compat-version", default=os.environ.get("BEBRALAND_COMPAT_VERSION", ""))
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""))
     parser.add_argument("--tag", default="")
     parser.add_argument("--platform", default=os.environ.get("BEBRALAND_RELEASE_PLATFORM") or current_platform_id())
@@ -67,11 +70,16 @@ def main() -> None:
     if not artifact.exists():
         raise FileNotFoundError(artifact)
 
-    version = (args.version or "").strip().lstrip("vV")
-    if not version:
+    display_version = (args.display_version or args.version or "").strip().lstrip("vV")
+    if not display_version:
         raise RuntimeError("Version required. Pass --version or BEBRALAND_BUILD_VERSION.")
 
-    tag = (args.tag or f"v{version}").strip()
+    update_id = str(args.update_id or "").strip()
+    compat_version = str(args.compat_version or "").strip().lstrip("vV")
+    if not compat_version:
+        compat_version = f"9999.{update_id}" if update_id.isdigit() else display_version
+
+    tag = (args.tag or f"v{display_version}").strip()
     url = args.url.strip()
     if not url:
         if not args.repo:
@@ -79,11 +87,15 @@ def main() -> None:
         url = f"https://github.com/{args.repo}/releases/download/{tag}/{artifact.name}"
 
     payload = {
-        "version": version,
+        "version": compat_version,
+        "display_version": display_version,
+        "tag": tag,
         "platform": release_platform,
         "url": url,
         "sha256": sha256_file(artifact),
     }
+    if update_id:
+        payload["update_id"] = update_id
     if args.notes:
         payload["notes"] = args.notes
 

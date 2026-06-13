@@ -37,6 +37,38 @@ def is_newer_version(latest: str, current: str) -> bool:
     return latest_parts > current_parts
 
 
+def numeric_update_id(value: str) -> tuple[int, ...] | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if re.fullmatch(r"\d+(?:[.-]\d+)*", text):
+        return tuple(int(part) for part in re.split(r"[.-]", text))
+    return None
+
+
+def is_newer_update_id(latest: str, current: str) -> bool | None:
+    latest_id = numeric_update_id(latest)
+    current_id = numeric_update_id(current)
+    if latest_id is None or current_id is None:
+        return None
+    width = max(len(latest_id), len(current_id))
+    latest_parts = list(latest_id) + [0] * (width - len(latest_id))
+    current_parts = list(current_id) + [0] * (width - len(current_id))
+    return latest_parts > current_parts
+
+
+def display_version(release: dict[str, Any]) -> str:
+    value = str(release.get("display_version") or release.get("tag") or release.get("version") or "").strip()
+    return value.lstrip("vV") if value else "unknown"
+
+
+def is_update_available(release: dict[str, Any], current_version: str, current_update_id: str = "") -> bool:
+    update_id_result = is_newer_update_id(str(release.get("update_id") or ""), current_update_id)
+    if update_id_result is not None:
+        return update_id_result
+    return is_newer_version(str(release.get("version") or ""), current_version)
+
+
 def platform_aliases(value: str | None = None) -> set[str]:
     current = str(value or platform_id()).strip().lower()
     aliases = {current}
@@ -96,9 +128,15 @@ def normalize_release(manifest: dict[str, Any], current_platform: str | None = N
         raise ValueError("Update manifest has no download url")
     release: dict[str, Any] = {
         "version": version,
+        "display_version": str(selected.get("display_version") or manifest.get("display_version") or version)
+        .strip()
+        .lstrip("vV"),
         "platform": str(selected.get("platform") or current_platform).strip().lower() or current_platform,
         "url": url,
     }
+    update_id = str(selected.get("update_id") or manifest.get("update_id") or "").strip()
+    if update_id:
+        release["update_id"] = update_id
     sha256 = str(selected.get("sha256") or "").strip()
     if sha256:
         release["sha256"] = sha256
@@ -113,6 +151,7 @@ def get_update_release(
     manifest_url: str,
     status: Status,
     current_platform: str | None = None,
+    current_update_id: str = "",
 ) -> dict[str, Any] | None:
     manifest_url = manifest_url.strip()
     if not manifest_url:
@@ -128,7 +167,7 @@ def get_update_release(
     if release is None:
         status(f"No launcher update for {current_platform}")
         return None
-    if not is_newer_version(release["version"], current_version):
+    if not is_update_available(release, current_version, current_update_id):
         status("Launcher up to date")
         return None
     return release
@@ -152,7 +191,7 @@ def download_release(release: dict[str, Any], status: Status) -> Path:
         filename = f"{base.stem}-{release['version']}-{release.get('platform') or platform_id()}{base.suffix}"
     target = updates_dir / filename
     tmp = target.with_suffix(target.suffix + ".part")
-    status(f"Download launcher {release['version']}")
+    status(f"Download launcher {display_version(release)}")
     try:
         with requests.get(release["url"], stream=True, timeout=120) as response:
             response.raise_for_status()

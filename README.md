@@ -101,16 +101,25 @@ On start launcher downloads its platform manifest from GitHub Releases:
 
 ```json
 {
-  "version": "0.2.0",
+  "version": "9999.123",
+  "display_version": "0.0.0.4",
+  "update_id": "123",
   "platform": "windows-x64",
-  "url": "https://github.com/OWNER/REPO/releases/download/v0.2.0/BebraLandLauncher-windows-x64.exe",
+  "url": "https://github.com/OWNER/REPO/releases/download/launcher-123/BebraLandLauncher-windows-x64.exe",
   "sha256": "..."
 }
 ```
 
 Platform IDs are `windows-x64`, `linux-x64`, `macos-arm64`, and `macos-x64` in the default GitHub workflow.
 
-If `version` is newer than the bundled launcher version, the launcher updates automatically, downloads the new binary into the user data `updates` folder, verifies `sha256`, then starts the installed updater from the install folder:
+Update fields:
+
+- `display_version`: the pretty version shown to players. It can go backward, repeat, or be changed for cosmetic reasons.
+- `update_id`: the hidden monotonic release number. The launcher uses this to decide whether a release is newer.
+- `version`: compatibility value for old launchers that still compare versions. The workflow writes this as `9999.<update_id>` so old `0.1.0` builds still update once.
+- GitHub tag: only the GitHub Release identifier. It does not need to match `display_version`.
+
+If `update_id` is newer than the bundled launcher update id, the launcher updates automatically, downloads the new binary into the user data `updates` folder, verifies `sha256`, then starts the installed updater from the install folder:
 
 ```text
 BebraLandUpdater[.exe] --install-update --source <downloaded-binary> --target <old-binary> --pid <old-pid>
@@ -124,20 +133,27 @@ Dev builds have no update channel unless `BEBRALAND_UPDATE_MANIFEST_URL` is set.
 
 This repo includes `.github/workflows/release.yml`.
 
-Release by tag:
+Preferred release flow:
+
+1. Open GitHub Actions.
+2. Run `Release launcher`.
+3. Enter the pretty display version, for example `0.0.0.4`.
+4. Leave `release_tag` empty unless you need a custom unique tag.
+
+Manual workflow releases use a safe tag like `launcher-123` by default, where `123` is GitHub's run number. This means the displayed launcher version can be `0.0.0.1` even if tag `v0.0.0.1` already exists.
+
+Tag push still works for advanced/manual releases:
 
 ```powershell
 git tag v0.2.0
 git push origin v0.2.0
 ```
 
-Or run the `Release launcher` workflow manually and enter version like `0.2.0`.
-
 GitHub Actions should:
 
 1. install uv-managed Python 3.13;
 2. build Windows x64, Linux x64, macOS arm64, and macOS x64 launchers;
-3. create `latest-<platform>.json` with SHA256 for each platform launcher;
+3. create `latest-<platform>.json` with `display_version`, `update_id`, compatibility `version`, and SHA256 for each platform launcher;
 4. build `setup-windows-x64.exe` for Windows;
 5. publish all launchers, updaters, manifests, and the Windows installer to GitHub Release.
 
@@ -151,9 +167,18 @@ Local test build with update channel:
 
 ```powershell
 $env:BEBRALAND_BUILD_VERSION = "0.1.0"
+$env:BEBRALAND_UPDATE_ID = "123"
 $env:BEBRALAND_UPDATE_MANIFEST_URL = "https://github.com/OWNER/REPO/releases/latest/download/latest-windows-x64.json"
 .\build_frontend.bat
 ```
+
+Rollback flow:
+
+1. Run the workflow again from a branch/commit that contains the older code you want.
+2. Enter the old pretty `display_version` if you want players to see that number.
+3. Let the workflow create a new tag like `launcher-124`.
+
+Do not just mark an old GitHub Release as latest for rollback. Its `update_id` is older, so installed launchers may correctly ignore it. A rollback should be a new release with a new `update_id` and old code/artifacts.
 
 ## Auth
 

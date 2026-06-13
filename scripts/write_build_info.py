@@ -24,11 +24,12 @@ def read_project_version() -> str:
     raise RuntimeError("No [project].version found in pyproject.toml")
 
 
-def write_build_info(version: str, manifest_url: str) -> None:
+def write_build_info(version: str, manifest_url: str, update_id: str) -> None:
     BUILD_INFO.write_text(
         "\n".join(
             [
                 f'VERSION = "{version}"',
+                f'UPDATE_ID = "{update_id}"',
                 f'UPDATE_MANIFEST_URL = "{manifest_url}"',
                 "",
             ]
@@ -40,13 +41,18 @@ def write_build_info(version: str, manifest_url: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", default=os.environ.get("BEBRALAND_BUILD_VERSION"))
+    parser.add_argument("--update-id", default=os.environ.get("BEBRALAND_UPDATE_ID", ""))
     parser.add_argument("--manifest-url", default=os.environ.get("BEBRALAND_UPDATE_MANIFEST_URL", ""))
     args = parser.parse_args()
 
     version = (args.version or read_project_version()).strip().lstrip("vV")
+    update_id = str(args.update_id or "").strip()
     manifest_url = args.manifest_url.strip()
-    write_build_info(version, manifest_url)
-    print(f"Wrote {BUILD_INFO.relative_to(ROOT)}: version={version}, manifest_url={manifest_url or '<disabled>'}")
+    write_build_info(version, manifest_url, update_id)
+    print(
+        f"Wrote {BUILD_INFO.relative_to(ROOT)}: "
+        f"version={version}, update_id={update_id or '<none>'}, manifest_url={manifest_url or '<disabled>'}"
+    )
 
 
 if __name__ == "__main__":

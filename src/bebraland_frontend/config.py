@@ -23,6 +23,10 @@ def update_manifest_url() -> str:
     return (os.environ.get("BEBRALAND_UPDATE_MANIFEST_URL") or DEFAULT_UPDATE_MANIFEST_URL).strip()
 
 
+def build_update_id() -> str:
+    return str(os.environ.get("BEBRALAND_UPDATE_ID") or getattr(build_info, "UPDATE_ID", "")).strip()
+
+
 def normalized_machine() -> str:
     machine = platform.machine().lower().replace(" ", "")
     aliases = {

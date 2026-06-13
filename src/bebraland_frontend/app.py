@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 
 from . import __version__
 from .api import ApiClient
-from .config import DEFAULT_SERVER_URL, platform_id, update_manifest_url
+from .config import DEFAULT_SERVER_URL, build_update_id, platform_id, update_manifest_url
 from .runtime import (
     delete_instance,
     install_mod_loader,
@@ -44,6 +44,7 @@ from .settings import load_settings, save_settings
 from .updater import (
     can_self_replace,
     cleanup_update_cache,
+    display_version,
     download_release,
     get_update_release,
     replace_current_exe,
@@ -844,17 +845,23 @@ class LauncherWindow(QWidget):
             return
 
         def task() -> None:
-            release = get_update_release(__version__, manifest_url, self.bridge.log.emit, platform_id())
+            release = get_update_release(
+                __version__,
+                manifest_url,
+                self.bridge.log.emit,
+                platform_id(),
+                build_update_id(),
+            )
             if not release:
                 return
-            self.bridge.log.emit(f"Update available: {release['version']}")
+            self.bridge.log.emit(f"Update available: {display_version(release)}")
             self.bridge.install_update.emit(release)
 
         self.run_bg(task, popup=False)
 
     def install_update(self, release: dict[str, Any]) -> None:
         def task() -> None:
-            self.bridge.log.emit(f"Install launcher update {release['version']}")
+            self.bridge.log.emit(f"Install launcher update {display_version(release)}")
             downloaded = download_release(release, self.bridge.log.emit)
             self.bridge.log.emit(f"Downloaded: {downloaded}")
             if can_self_replace():

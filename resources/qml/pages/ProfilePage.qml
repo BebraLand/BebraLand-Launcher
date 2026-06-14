@@ -15,14 +15,6 @@ Item {
         return assetsUrl !== "" ? assetsUrl + "/Images/" + name : ""
     }
 
-    SharpImage {
-        x: 82
-        y: 28
-        width: 38
-        height: 38
-        source: root.asset("logo.svg")
-    }
-
     BackButton {
         x: 125
         y: 22
@@ -76,8 +68,8 @@ Item {
                     Column {
                         anchors.left: parent.left
                         anchors.leftMargin: 98
-                        anchors.right: logoMark.left
-                        anchors.rightMargin: 20
+                        anchors.right: parent.right
+                        anchors.rightMargin: 28
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 2
 
@@ -100,17 +92,6 @@ Item {
                             font.pixelSize: 25
                             font.weight: Font.Black
                         }
-                    }
-
-                    SharpImage {
-                        id: logoMark
-                        anchors.right: parent.right
-                        anchors.rightMargin: 28
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 46
-                        height: 46
-                        source: root.asset("logo.svg")
-                        opacity: 0.9
                     }
                 }
 

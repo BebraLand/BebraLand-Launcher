@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
-from PySide6.QtCore import QPoint, Property, QObject, QRect, Qt, QUrl, Signal, Slot
+from PySide6.QtCore import QPoint, Property, QObject, QRect, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QCursor, QDesktopServices
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QVBoxLayout, QWidget
@@ -143,6 +143,7 @@ class Bridge(QObject):
     log = Signal(str)
     error = Signal(str)
     profiles = Signal(list)
+    profiles_silent = Signal(list)
     auth = Signal(dict)
     two_factor = Signal(str)
     install_update = Signal(dict)
@@ -192,6 +193,7 @@ class LauncherWindow(QWidget):
         self.bridge.log.connect(self.log_line)
         self.bridge.error.connect(self.show_error)
         self.bridge.profiles.connect(self.set_profiles)
+        self.bridge.profiles_silent.connect(self.set_profiles_silent)
         self.bridge.auth.connect(self.set_auth)
         self.bridge.two_factor.connect(self.show_two_factor)
         self.bridge.install_update.connect(self.install_update)
@@ -205,6 +207,10 @@ class LauncherWindow(QWidget):
         self.build_ui()
         self.configure_client_events()
         self.refresh_profiles()
+        self.profile_refresh_timer = QTimer(self)
+        self.profile_refresh_timer.setInterval(30_000)
+        self.profile_refresh_timer.timeout.connect(lambda: self.refresh_profiles(silent=True))
+        self.profile_refresh_timer.start()
         self.fetch_news()
         if self.client.token:
             self.verify_saved_login()
@@ -594,12 +600,19 @@ class LauncherWindow(QWidget):
         self.refresh_state()
 
     def set_profiles(self, profiles: list[dict[str, Any]]) -> None:
+        self.apply_profiles(profiles, update_status=True)
+
+    def set_profiles_silent(self, profiles: list[dict[str, Any]]) -> None:
+        self.apply_profiles(profiles, update_status=False)
+
+    def apply_profiles(self, profiles: list[dict[str, Any]], update_status: bool) -> None:
         self.profiles = profiles
         if not self.selected_profile_slug and profiles:
             self.selected_profile_slug = str(profiles[0].get("slug") or "")
         if self.selected_profile_slug and not any(p.get("slug") == self.selected_profile_slug for p in profiles):
             self.selected_profile_slug = str(profiles[0].get("slug") or "") if profiles else ""
-        self.status_text = f"Profiles: {len(profiles)}"
+        if update_status:
+            self.status_text = f"Profiles: {len(profiles)}"
         self.refresh_state()
 
     def set_news(self, posts: list[dict[str, Any]]) -> None:
@@ -637,12 +650,17 @@ class LauncherWindow(QWidget):
         self.login_status = reason
         self.refresh_state()
 
-    def refresh_profiles(self) -> None:
+    def refresh_profiles(self, silent: bool = False) -> None:
         self.reset_client()
 
         def task() -> None:
-            self.bridge.log.emit("Load profiles")
-            self.bridge.profiles.emit(self.client.get_profiles())
+            if not silent:
+                self.bridge.log.emit("Load profiles")
+            profiles = self.client.get_profiles()
+            if silent:
+                self.bridge.profiles_silent.emit(profiles)
+            else:
+                self.bridge.profiles.emit(profiles)
 
         self.run_bg(task, popup=False)
 

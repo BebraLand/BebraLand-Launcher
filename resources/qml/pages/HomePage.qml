@@ -7,6 +7,8 @@ Item {
 
     property var state: ({})
     property var profile: state.selectedProfile || ({})
+    property var server: profile.server || null
+    property var serverStatus: profile.server_status || null
     property var news: state.news || []
     signal navigate(string page)
 
@@ -21,6 +23,29 @@ Item {
         return fallback
     }
 
+    function hasServer() {
+        return root.server !== null && root.server !== undefined
+    }
+
+    function serverTitle() {
+        if (!root.hasServer())
+            return ""
+        return root.server.name || root.server.host || "On server"
+    }
+
+    function playersText() {
+        if (!root.hasServer())
+            return ""
+        if (!root.serverStatus)
+            return "Loading..."
+        if (root.serverStatus.online !== true)
+            return "Offline"
+        var players = root.serverStatus.players || {}
+        var online = players.online || 0
+        var maxPlayers = players.max || 0
+        return maxPlayers > 0 ? online + "/" + maxPlayers + " pl." : online + " pl."
+    }
+
     Item {
         id: content
         anchors.fill: parent
@@ -31,12 +56,15 @@ Item {
 
         Rectangle {
             id: onlinePanel
+            visible: root.hasServer()
             anchors.left: parent.left
             anchors.top: parent.top
-            width: 164
-            height: 72
+            width: 214
+            height: 74
             radius: 12
             color: theme.frame
+            border.color: theme.frameBorder
+            border.width: 1
 
             Rectangle {
                 anchors.left: parent.left
@@ -49,9 +77,9 @@ Item {
 
                 Image {
                     anchors.centerIn: parent
-                    width: 22
-                    height: 22
-                    source: root.state.assetsUrl + "/Images/users.svg"
+                    width: 32
+                    height: 32
+                    source: root.state.assetsUrl + "/Images/logo.svg"
                     fillMode: Image.PreserveAspectFit
                 }
             }
@@ -59,20 +87,26 @@ Item {
             Column {
                 anchors.left: parent.left
                 anchors.leftMargin: 72
+                anchors.right: parent.right
+                anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 3
 
                 Text {
-                    text: "On servers"
+                    width: parent.width
+                    text: root.serverTitle()
                     color: theme.content
+                    elide: Text.ElideRight
                     font.family: theme.fontFamily
                     font.pixelSize: 13
                     font.weight: Font.Medium
                 }
 
                 Text {
-                    text: "0 pl."
-                    color: theme.headline
+                    width: parent.width
+                    text: root.playersText()
+                    color: root.serverStatus && root.serverStatus.online === true ? theme.headline : theme.content
+                    elide: Text.ElideRight
                     font.family: theme.fontFamily
                     font.pixelSize: 17
                     font.weight: Font.Black

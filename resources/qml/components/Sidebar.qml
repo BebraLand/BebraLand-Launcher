@@ -30,8 +30,8 @@ Item {
         anchors.top: parent.top
         anchors.topMargin: 28
         anchors.horizontalCenter: parent.horizontalCenter
-        width: 38
-        height: 38
+        width: 76
+        height: 76
         source: root.asset("logo.svg")
     }
 

@@ -1,4 +1,4 @@
 VERSION = "0.1.0"
 UPDATE_ID = ""
 UPDATE_MANIFEST_URL = ""
-SERVER_URL = "http://192.168.0.116:8765"
+SERVER_URL = "https://bebralandlauncher.duckdns.org/"

@@ -45,7 +45,6 @@ Rectangle {
                 : root.s.defaultBackgroundUrl
         fillMode: Image.PreserveAspectCrop
         renderScale: 2
-        cache: false
     }
 
     Rectangle {

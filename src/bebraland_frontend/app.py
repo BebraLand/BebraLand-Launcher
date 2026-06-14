@@ -13,6 +13,7 @@ import time
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 from PySide6.QtCore import QPoint, Property, QObject, QRect, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QCursor, QDesktopServices, QIcon
@@ -173,6 +174,45 @@ def cache_busted_url(url: str, nonce: int) -> str:
     return f"{url}{separator}_bl={nonce}"
 
 
+def profile_asset_cache_path(url: str) -> Path:
+    parsed = urlsplit(url)
+    suffix = Path(parsed.path).suffix.lower()
+    if suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
+        suffix = ".img"
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    return launcher_data_dir() / "cache" / "profile-assets" / f"{digest}{suffix}"
+
+
+def cached_profile_asset_url(url: str) -> str:
+    if not url.startswith(("http://", "https://")):
+        return url
+    path = profile_asset_cache_path(url)
+    return file_url(path) if path.is_file() else url
+
+
+def download_profile_asset(url: str) -> bool:
+    if not url.startswith(("http://", "https://")):
+        return False
+    target = profile_asset_cache_path(url)
+    if target.is_file():
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(target.suffix + ".part")
+    request = urllib.request.Request(
+        url,
+        headers={"Accept": "image/*", "User-Agent": f"BebraLand Launcher/{__version__}"},
+        method="GET",
+    )
+    with urllib.request.urlopen(request, timeout=20) as response, tmp.open("wb") as handle:
+        while True:
+            chunk = response.read(1024 * 256)
+            if not chunk:
+                break
+            handle.write(chunk)
+    tmp.replace(target)
+    return True
+
+
 def format_post_date(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
@@ -236,6 +276,7 @@ class LauncherWindow(QWidget):
         self._last_login_email = ""
         self._last_login_password = ""
         self._profiles_loaded = False
+        self._profiles_revision = 0
         self._auth_verify_pending = bool(self.client.token)
         self._state: dict[str, Any] = {}
 
@@ -434,7 +475,7 @@ class LauncherWindow(QWidget):
 
     def absolute_profile_url(self, profile: dict[str, Any], field: str) -> str:
         value = str(profile.get(field) or "").strip()
-        return absolute_url(self.client.server_url, value) if value else ""
+        return cached_profile_asset_url(absolute_url(self.client.server_url, value)) if value else ""
 
     def selected_profile(self) -> dict[str, Any] | None:
         for profile in self.profiles:
@@ -704,7 +745,10 @@ class LauncherWindow(QWidget):
 
     def apply_profiles(self, profiles: list[dict[str, Any]], update_status: bool) -> None:
         self._profiles_loaded = True
+        self._profiles_revision += 1
+        revision = self._profiles_revision
         self.profiles = profiles
+        self.warm_profile_asset_cache(profiles, revision)
         if not self.selected_profile_slug and profiles:
             self.selected_profile_slug = str(profiles[0].get("slug") or "")
         if self.selected_profile_slug and not any(p.get("slug") == self.selected_profile_slug for p in profiles):
@@ -712,6 +756,33 @@ class LauncherWindow(QWidget):
         if update_status:
             self.status_text = f"Profiles: {len(profiles)}"
         self.refresh_state()
+
+    def warm_profile_asset_cache(self, profiles: list[dict[str, Any]], revision: int) -> None:
+        urls: list[str] = []
+        for profile in profiles:
+            for field in ("icon_url", "background_url"):
+                value = str(profile.get(field) or "").strip()
+                if not value:
+                    continue
+                url = absolute_url(self.client.server_url, value)
+                if url.startswith(("http://", "https://")) and not profile_asset_cache_path(url).is_file():
+                    urls.append(url)
+        if not urls:
+            return
+
+        unique_urls = list(dict.fromkeys(urls))
+
+        def task() -> None:
+            changed = False
+            for url in unique_urls:
+                try:
+                    changed = download_profile_asset(url) or changed
+                except Exception as exc:
+                    self.bridge.log.emit(f"Profile asset cache skipped: {exc}")
+            if changed and revision == self._profiles_revision:
+                self.bridge.profiles_silent.emit(profiles)
+
+        self.run_bg(task)
 
     def mark_profiles_unavailable(self) -> None:
         self._profiles_loaded = True

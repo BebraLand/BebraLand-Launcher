@@ -84,7 +84,7 @@ Item {
                     anchors.centerIn: parent
                     width: 32
                     height: 32
-                    source: root.asset("logo.svg")
+                    source: root.asset("users.svg")
                 }
             }
 

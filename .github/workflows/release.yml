@@ -79,7 +79,7 @@ jobs:
       BEBRALAND_COMPAT_VERSION: 9999.${{ github.run_number }}
       BEBRALAND_RELEASE_PLATFORM: ${{ matrix.platform }}
       BEBRALAND_SERVER_URL: ${{ secrets.BEBRALAND_SERVER_URL }}
-      BEBRALAND_UPDATE_MANIFEST_URL: https://github.com/${{ github.repository }}/releases/latest/download/latest-${{ matrix.platform }}.json
+      BEBRALAND_UPDATE_MANIFEST_URL: https://github.com/${{ github.repository }}/releases/latest/download/latest.json
 
     steps:
       - name: Checkout
@@ -167,11 +167,27 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
       - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts
           merge-multiple: true
+
+      - name: Merge update manifests
+        shell: bash
+        run: |
+          uv run python scripts/merge_release_manifests.py \
+            --output release-artifacts/latest.json \
+            release-artifacts/latest-*.json
+          rm release-artifacts/latest-*.json
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2

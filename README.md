@@ -111,16 +111,20 @@ The installer defaults to `%LOCALAPPDATA%\Programs\BebraLand Launcher`, lets the
 
 Release builds ship one launcher and one updater per platform. Windows also ships an Inno Setup installer.
 
-On start launcher downloads its platform manifest from GitHub Releases:
+On start launcher downloads the shared update manifest from GitHub Releases:
 
 ```json
 {
   "version": "9999.123",
   "display_version": "0.0.0.4",
   "update_id": "123",
-  "platform": "windows-x64",
-  "url": "https://github.com/OWNER/REPO/releases/download/launcher-123/BebraLandLauncher-windows-x64.exe",
-  "sha256": "..."
+  "releases": {
+    "windows-x64": {
+      "platform": "windows-x64",
+      "url": "https://github.com/OWNER/REPO/releases/download/launcher-123/BebraLandLauncher-windows-x64.exe",
+      "sha256": "..."
+    }
+  }
 }
 ```
 
@@ -167,14 +171,14 @@ GitHub Actions should:
 
 1. install uv-managed Python 3.13;
 2. build Windows x64, Linux x64, macOS arm64, and macOS x64 launchers;
-3. create `latest-<platform>.json` with `display_version`, `update_id`, compatibility `version`, and SHA256 for each platform launcher;
+3. create one `latest.json` with `display_version`, `update_id`, compatibility `version`, and SHA256 for each platform launcher;
 4. build `setup-windows-x64.exe` for Windows;
-5. publish all launchers, updaters, manifests, and the Windows installer to GitHub Release.
+5. publish all launchers, updaters, `latest.json`, and the Windows installer to GitHub Release.
 
 Players on Windows download `setup-windows-x64.exe` from the latest release. macOS/Linux players download their platform binary and keep the updater next to it. Future release builds auto-check:
 
 ```text
-https://github.com/<owner>/<repo>/releases/latest/download/latest-<platform>.json
+https://github.com/<owner>/<repo>/releases/latest/download/latest.json
 ```
 
 Local test build with update channel:
@@ -182,7 +186,7 @@ Local test build with update channel:
 ```powershell
 $env:BEBRALAND_BUILD_VERSION = "0.1.0"
 $env:BEBRALAND_UPDATE_ID = "123"
-$env:BEBRALAND_UPDATE_MANIFEST_URL = "https://github.com/OWNER/REPO/releases/latest/download/latest-windows-x64.json"
+$env:BEBRALAND_UPDATE_MANIFEST_URL = "https://github.com/OWNER/REPO/releases/latest/download/latest.json"
 .\build_frontend.bat
 ```
 

@@ -38,13 +38,16 @@ Rectangle {
         }
     }
 
-    SharpImage {
+    Image {
         anchors.fill: parent
         source: !root.s.bootstrapping && root.currentPage === "home" && root.s.selectedProfile && root.s.selectedProfile.background_url
                 ? root.s.selectedProfile.background_url
                 : root.s.defaultBackgroundUrl
         fillMode: Image.PreserveAspectCrop
-        renderScale: 2
+        asynchronous: false
+        cache: true
+        smooth: true
+        mipmap: true
     }
 
     Rectangle {

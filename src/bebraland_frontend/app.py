@@ -480,6 +480,7 @@ class LauncherWindow(QWidget):
             "selectedProfile": self.public_profile(profile) if profile else {},
             "ram": self.ram_state(profile),
             "window": self.window_state(),
+            "debugConsole": self.debug_console_enabled(),
             "installDir": str(self.install_dir()),
             "optionalMods": self.optional_mod_state(profile),
             "news": self.news,
@@ -568,6 +569,9 @@ class LauncherWindow(QWidget):
             "width": int(value.get("width") or DEFAULT_WINDOW_WIDTH),
             "height": int(value.get("height") or DEFAULT_WINDOW_HEIGHT),
         }
+
+    def debug_console_enabled(self) -> bool:
+        return bool(self.settings.get("debug_console", False))
 
     def optional_mods_for_profile(self, profile: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         profile = profile or self.selected_profile()
@@ -1055,6 +1059,12 @@ class LauncherWindow(QWidget):
         save_settings(self.settings)
         self.refresh_state()
 
+    @Slot(bool)
+    def setDebugConsole(self, enabled: bool) -> None:
+        self.settings["debug_console"] = bool(enabled)
+        save_settings(self.settings)
+        self.refresh_state()
+
     @Slot()
     def chooseInstallFolder(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Choose install folder", str(self.install_dir()))
@@ -1247,6 +1257,7 @@ class LauncherWindow(QWidget):
                 access_token=self.client.token,
                 minecraft_profile=self.minecraft_profile,
                 window_settings=self.window_state(),
+                debug_console=self.debug_console_enabled(),
             )
             self.bridge.minecraft_started.emit(process)
             self.bridge.progress_done.emit()

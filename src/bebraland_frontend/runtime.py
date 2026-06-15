@@ -1144,6 +1144,7 @@ def launch_minecraft(
     access_token: str | None = None,
     minecraft_profile: dict[str, Any] | None = None,
     window_settings: dict[str, Any] | None = None,
+    debug_console: bool = False,
 ) -> subprocess.Popen:
     if installed_version is None:
         installed_version = install_mod_loader(manifest, game_dir, status, progress)
@@ -1198,4 +1199,12 @@ def launch_minecraft(
         status(f"Start Minecraft with {int(ram_mb)} MB RAM")
     else:
         status("Start Minecraft")
-    return subprocess.Popen(command, cwd=str(game_dir))
+    creationflags = 0
+    if debug_console and os.name == "nt":
+        creationflags = subprocess.CREATE_NEW_CONSOLE
+        java_path = Path(str(command[0]))
+        if java_path.name.lower() == "javaw.exe":
+            java_exe = java_path.with_name("java.exe")
+            if java_exe.is_file():
+                command[0] = str(java_exe)
+    return subprocess.Popen(command, cwd=str(game_dir), creationflags=creationflags)

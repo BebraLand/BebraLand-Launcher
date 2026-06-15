@@ -60,8 +60,8 @@ Item {
         anchors.bottom: parent.bottom
         anchors.leftMargin: 125
         anchors.rightMargin: 35
-        anchors.topMargin: 135
-        anchors.bottomMargin: 45
+        anchors.topMargin: 95
+        anchors.bottomMargin: 35
 
         FrameCard {
             id: ramCard
@@ -191,7 +191,7 @@ Item {
 
             FrameCard {
                 width: parent.width
-                height: 194
+                height: 260
 
                 Column {
                     anchors.fill: parent
@@ -253,6 +253,14 @@ Item {
                             validator: IntValidator { bottom: 240; top: 4320 }
                             onEditingFinished: root.saveWindow(fullscreenCheck.checked)
                         }
+                    }
+
+                    Rectangle { width: parent.width; height: 1; color: theme.formBorder }
+
+                    CheckRow {
+                        checked: !!root.state.debugConsole
+                        text: "Show Minecraft console"
+                        onToggled: function(checked) { controller.setDebugConsole(checked) }
                     }
                 }
             }
@@ -332,6 +340,7 @@ Item {
                     }
                 }
             }
+
         }
     }
 }

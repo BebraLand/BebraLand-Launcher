@@ -51,6 +51,7 @@ Item {
         }
 
         Rectangle {
+            visible: root.profiles().length > 0
             width: 60
             height: Math.min(350, Math.max(60, root.profiles().length * 50 + 10))
             radius: 30

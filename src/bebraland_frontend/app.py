@@ -455,6 +455,7 @@ class LauncherWindow(QWidget):
         authenticated = bool(self.client.token and self.auth_user)
         bootstrapping = self._auth_verify_pending or (authenticated and not self._profiles_loaded)
         minecraft_running = self.minecraft_running()
+        has_selected_profile = profile is not None
         self._state = {
             "authenticated": authenticated,
             "bootstrapping": bootstrapping,
@@ -471,7 +472,8 @@ class LauncherWindow(QWidget):
             "progressVisible": self.progress_visible,
             "operationRunning": self._pack_operation_running,
             "minecraftRunning": minecraft_running,
-            "playDisabled": self._pack_operation_running or minecraft_running,
+            "hasSelectedProfile": has_selected_profile,
+            "playDisabled": not has_selected_profile or self._pack_operation_running or minecraft_running,
             "canCancelDownload": self._cancel_event is not None and not self._cancel_event.is_set(),
             "defaultBackgroundUrl": file_url(DEFAULT_BACKGROUND_PATH),
             "assetsUrl": file_url(GML_ASSETS_DIR),

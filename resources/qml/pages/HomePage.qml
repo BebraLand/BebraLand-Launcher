@@ -11,6 +11,7 @@ Item {
     property var serverStatus: profile.server_status || null
     property var news: state.news || []
     property string assetsUrl: state.assetsUrl || ""
+    property bool hasProfile: !!state.hasSelectedProfile
     signal navigate(string page)
 
     Theme { id: theme }
@@ -127,6 +128,7 @@ Item {
             spacing: 20
 
             Row {
+                visible: root.hasProfile
                 spacing: 8
                 StatusBadge { text: "Available" }
                 StatusBadge { text: root.value(["minecraft_version", "game_version"], "1.21.1") }
@@ -135,7 +137,7 @@ Item {
 
             Text {
                 width: parent.width
-                text: root.value(["name", "display_name"], "BebraLand")
+                text: root.hasProfile ? root.value(["name", "display_name"], "BebraLand") : "No packs available"
                 color: theme.headline
                 wrapMode: Text.WordWrap
                 font.family: theme.fontFamily
@@ -145,7 +147,7 @@ Item {
 
             Text {
                 width: Math.min(parent.width, 500)
-                text: root.value(["description", "slug"], "")
+                text: root.hasProfile ? root.value(["description", "slug"], "") : "All packs are disabled or not created yet."
                 color: theme.content
                 wrapMode: Text.WordWrap
                 lineHeight: 1.35
@@ -164,7 +166,7 @@ Item {
                     radius: 25
                     color: !enabled ? theme.formHover : (playMouse.active ? theme.primaryHover : theme.primary)
                     clip: true
-                    enabled: !root.state.playDisabled
+                    enabled: root.hasProfile && !root.state.playDisabled
                     opacity: enabled ? 1 : 0.55
 
                     property bool mainActive: playMouse.active && playMouse.mouseX < 113
@@ -335,6 +337,7 @@ Item {
                     iconSource: root.asset("document.svg")
                     iconSize: 23
                     font.pixelSize: 16
+                    enabled: root.hasProfile
                     onClicked: root.navigate("mods")
                 }
             }

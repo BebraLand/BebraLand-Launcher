@@ -379,6 +379,22 @@ Rectangle {
         }
     }
 
+    Text {
+        z: 39
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: 18
+        anchors.bottomMargin: 8
+        width: 90
+        height: 16
+        text: root.s.version ? "v" + root.s.version : ""
+        color: "#90C8D0D4"
+        elide: Text.ElideRight
+        font.family: theme.fontFamily
+        font.pixelSize: 11
+        font.weight: Font.DemiBold
+    }
+
     Row {
         z: 40
         anchors.top: parent.top

@@ -1224,11 +1224,17 @@ def launch_minecraft(
     else:
         status("Start Minecraft")
     creationflags = 0
-    if debug_console and os.name == "nt":
-        creationflags = subprocess.CREATE_NEW_CONSOLE
+    if os.name == "nt":
         java_path = Path(str(command[0]))
-        if java_path.name.lower() == "javaw.exe":
-            java_exe = java_path.with_name("java.exe")
-            if java_exe.is_file():
-                command[0] = str(java_exe)
+        if debug_console:
+            creationflags = subprocess.CREATE_NEW_CONSOLE
+            if java_path.name.lower() == "javaw.exe":
+                java_exe = java_path.with_name("java.exe")
+                if java_exe.is_file():
+                    command[0] = str(java_exe)
+        else:
+            if java_path.name.lower() == "java.exe":
+                javaw_exe = java_path.with_name("javaw.exe")
+                if javaw_exe.is_file():
+                    command[0] = str(javaw_exe)
     return subprocess.Popen(command, cwd=str(game_dir), creationflags=creationflags)

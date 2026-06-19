@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
-from PySide6.QtCore import QLockFile, QPoint, Property, QObject, QRect, Qt, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QLockFile, QPoint, Property, QObject, QRect, Qt, QUrl, Signal, Slot
 from PySide6.QtGui import QCursor, QDesktopServices, QIcon
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QVBoxLayout, QWidget
@@ -84,6 +84,11 @@ APP_ICON_PATH = GML_IMAGES_DIR / "logo.ico"
 def strip_html(value: Any) -> str:
     text = re.sub(r"<[^>]+>", " ", str(value or ""))
     return re.sub(r"\s+", " ", html.unescape(text)).strip()
+
+
+def profiles_hash(profiles: list[dict[str, Any]]) -> str:
+    payload = json.dumps(profiles, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def is_two_factor_required_error(exc: Exception) -> bool:
@@ -326,10 +331,6 @@ class LauncherWindow(QWidget):
         self.build_ui()
         self.configure_client_events()
         self.refresh_profiles()
-        self.profile_refresh_timer = QTimer(self)
-        self.profile_refresh_timer.setInterval(30_000)
-        self.profile_refresh_timer.timeout.connect(lambda: self.refresh_profiles(silent=True))
-        self.profile_refresh_timer.start()
         self.fetch_news()
         if self.client.token:
             self.verify_saved_login()
@@ -852,12 +853,23 @@ class LauncherWindow(QWidget):
         self.apply_profiles(profiles, update_status=False)
 
     def apply_profiles(self, profiles: list[dict[str, Any]], update_status: bool) -> None:
+        digest = profiles_hash(profiles)
+        current_digest = str(self.settings.get("cached_profiles_hash") or "")
+        if digest == current_digest and profiles == self.profiles:
+            self._profiles_loaded = True
+            self._offline_mode = False
+            if update_status:
+                self.status_text = f"Profiles: {len(profiles)}"
+            self.refresh_state()
+            return
+
         self._profiles_loaded = True
         self._offline_mode = False
         self._profiles_revision += 1
         revision = self._profiles_revision
         self.profiles = profiles
         self.settings["cached_profiles"] = profiles
+        self.settings["cached_profiles_hash"] = digest
         save_settings(self.settings)
         self.warm_profile_asset_cache(profiles, revision)
         if not self.selected_profile_slug and profiles:
@@ -932,6 +944,7 @@ class LauncherWindow(QWidget):
         self.login_status = ""
         self.status_text = f"Logged in: {self.current_username()}"
         self.refresh_skin_profile()
+        self.refresh_profiles(silent=True)
         self.refresh_state()
 
     def set_skin_profile(self, payload: dict[str, Any]) -> None:
@@ -948,6 +961,7 @@ class LauncherWindow(QWidget):
         self.settings.pop("minecraft_profile", None)
         save_settings(self.settings)
         self.login_status = reason
+        self.refresh_profiles(silent=True)
         self.refresh_state()
 
     def handle_saved_login_unverified(self, reason: str = "") -> None:
@@ -962,7 +976,10 @@ class LauncherWindow(QWidget):
             try:
                 if not silent:
                     self.bridge.log.emit("Load profiles")
-                profiles = self.client.get_profiles()
+                current_hash = profiles_hash(self.profiles) if self.profiles else ""
+                profiles = self.client.get_profiles(current_hash)
+                if profiles is None:
+                    profiles = self.profiles
                 if silent:
                     self.bridge.profiles_silent.emit(profiles)
                 else:

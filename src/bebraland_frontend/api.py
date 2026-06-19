@@ -231,8 +231,11 @@ class ApiClient:
         if ws:
             ws.close()
 
-    def get_profiles(self) -> list[dict[str, Any]]:
-        return self._request("profiles.list", {}, timeout=20)["profiles"]
+    def get_profiles(self, current_hash: str = "") -> list[dict[str, Any]] | None:
+        payload = self._request("profiles.check", {"hash": current_hash}, timeout=20)
+        if payload.get("unchanged"):
+            return None
+        return payload["profiles"]
 
     def latest_manifest(self, slug: str) -> dict[str, Any]:
         return self._request("profile.latest", {"slug": slug}, timeout=120)

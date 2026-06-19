@@ -7,6 +7,7 @@ import html
 import json
 import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -89,6 +90,17 @@ def strip_html(value: Any) -> str:
 def profiles_hash(profiles: list[dict[str, Any]]) -> str:
     payload = json.dumps(profiles, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def format_bytes(value: int) -> str:
+    size = float(max(0, value))
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"
 
 
 def is_two_factor_required_error(exc: Exception) -> bool:
@@ -303,6 +315,7 @@ class LauncherWindow(QWidget):
         self._pack_operation_running = False
         self._cancel_event: threading.Event | None = None
         self._minecraft_process: Any | None = None
+        self._log_cleanup_cache: dict[str, dict[str, Any]] = {}
         self._state: dict[str, Any] = {}
 
         self.apply_install_root()
@@ -460,6 +473,66 @@ class LauncherWindow(QWidget):
     def apply_install_root(self) -> None:
         set_instances_root(self.install_dir())
 
+    def selected_instance_dir(self) -> Path | None:
+        slug = self.selected_profile_slug or self.selected_slug()
+        if not slug:
+            return None
+        try:
+            return instance_path(slug)
+        except ValueError:
+            return None
+
+    def log_cleanup_targets(self) -> list[Path]:
+        game_dir = self.selected_instance_dir()
+        if not game_dir or not game_dir.exists():
+            return []
+
+        targets: list[Path] = []
+        for folder_name in ("logs", "crash-reports"):
+            folder = game_dir / folder_name
+            if folder.exists():
+                targets.append(folder)
+
+        for pattern in ("debug.log", "fabricloader.log", "win-event*.txt", "win_event*.txt", "crash-*.txt", "hs_err_pid*.log"):
+            targets.extend(path for path in game_dir.glob(pattern) if path.exists())
+
+        return list(dict.fromkeys(targets))
+
+    def log_cleanup_size_bytes(self) -> int:
+        total = 0
+        for target in self.log_cleanup_targets():
+            if target.is_file():
+                try:
+                    total += target.stat().st_size
+                except OSError:
+                    pass
+                continue
+            for file_path in target.rglob("*"):
+                if not file_path.is_file():
+                    continue
+                try:
+                    total += file_path.stat().st_size
+                except OSError:
+                    pass
+        return total
+
+    def log_cleanup_state(self) -> dict[str, Any]:
+        game_dir = self.selected_instance_dir()
+        cache_key = str(game_dir) if game_dir else ""
+        if cache_key and cache_key in self._log_cleanup_cache:
+            return self._log_cleanup_cache[cache_key]
+
+        size = self.log_cleanup_size_bytes()
+        state = {
+            "sizeBytes": size,
+            "sizeText": format_bytes(size),
+            "hasLogs": size > 0,
+            "path": str(game_dir) if game_dir else "",
+        }
+        if cache_key:
+            self._log_cleanup_cache[cache_key] = state
+        return state
+
     def refresh_state(self) -> None:
         profile = self.selected_profile()
         authenticated = bool(self.client.token and self.auth_user)
@@ -495,6 +568,7 @@ class LauncherWindow(QWidget):
             "window": self.window_state(),
             "debugConsole": self.debug_console_enabled(),
             "installDir": str(self.install_dir()),
+            "logCleanup": self.log_cleanup_state(),
             "optionalMods": self.optional_mod_state(profile),
             "news": self.news,
             "loginStatus": self.login_status,
@@ -1160,6 +1234,57 @@ class LauncherWindow(QWidget):
     def openInstallFolder(self) -> None:
         self.install_dir().mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.install_dir())))
+
+    @Slot()
+    def refreshLogSize(self) -> None:
+        game_dir = self.selected_instance_dir()
+        if game_dir:
+            self._log_cleanup_cache.pop(str(game_dir), None)
+        self.refresh_state()
+
+    @Slot()
+    def clearSelectedLogs(self) -> None:
+        game_dir = self.selected_instance_dir()
+        if not game_dir:
+            QMessageBox.information(self, "BebraLand logs", "Select a pack first.")
+            return
+
+        targets = self.log_cleanup_targets()
+        size = self.log_cleanup_size_bytes()
+        if not targets or size <= 0:
+            self.status_text = "No logs to delete"
+            self.refresh_state()
+            return
+
+        answer = QMessageBox.question(
+            self,
+            "BebraLand logs",
+            f"Delete {format_bytes(size)} of logs for this pack?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        root = game_dir.resolve()
+        for target in targets:
+            try:
+                resolved = target.resolve()
+                if resolved != root and root not in resolved.parents:
+                    continue
+                if resolved.is_dir():
+                    shutil.rmtree(resolved)
+                else:
+                    resolved.unlink()
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                self.show_error(f"Failed to delete logs: {exc}")
+                return
+
+        self.status_text = f"Deleted logs: {format_bytes(size)}"
+        self._log_cleanup_cache.pop(str(root), None)
+        self.refresh_state()
 
     @Slot(str, str, str)
     def login(self, email: str, password: str, code: str = "") -> None:

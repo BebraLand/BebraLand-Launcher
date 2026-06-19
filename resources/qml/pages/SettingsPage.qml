@@ -9,6 +9,7 @@ Item {
     property var ram: state.ram || ({})
     property int editedRam: ram.value || 2048
     property var windowState: state.window || ({})
+    property var logCleanup: state.logCleanup || ({})
     property string assetsUrl: state.assetsUrl || ""
     signal navigate(string page)
 
@@ -191,7 +192,8 @@ Item {
 
             FrameCard {
                 width: parent.width
-                height: 260
+                height: 236
+                contentPadding: 18
 
                 Column {
                     anchors.fill: parent
@@ -267,11 +269,12 @@ Item {
 
             FrameCard {
                 width: parent.width
-                height: 186
+                height: 214
+                contentPadding: 18
 
                 Column {
                     anchors.fill: parent
-                    spacing: 14
+                    spacing: 12
 
                     Row {
                         spacing: 10
@@ -296,7 +299,7 @@ Item {
                         spacing: 14
 
                         Rectangle {
-                            width: parent.width - 128
+                            width: parent.width - 136
                             height: 50
                             radius: 10
                             color: theme.form
@@ -320,8 +323,8 @@ Item {
 
                         GmlButton {
                             width: 54
-                            height: 54
-                            radius: 27
+                            height: 50
+                            radius: 25
                             kind: "additional"
                             iconSource: root.asset("folder.svg")
                             iconSize: 22
@@ -330,12 +333,63 @@ Item {
 
                         GmlButton {
                             width: 54
-                            height: 54
-                            radius: 27
+                            height: 50
+                            radius: 25
                             kind: "additional"
                             iconSource: root.asset("edit.svg")
                             iconSize: 22
                             onClicked: controller.chooseInstallFolder()
+                        }
+                    }
+
+                    Rectangle { width: parent.width; height: 1; color: theme.formBorder }
+
+                    Row {
+                        width: parent.width
+                        height: 50
+                        spacing: 14
+
+                        Rectangle {
+                            width: parent.width - 198
+                            height: 50
+                            radius: 10
+                            color: theme.form
+                            border.width: 1
+                            border.color: theme.formBorder
+
+                            Text {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.leftMargin: 16
+                                anchors.rightMargin: 16
+                                text: "Logs " + (root.logCleanup.sizeText || "0 B")
+                                color: theme.content
+                                elide: Text.ElideRight
+                                font.family: theme.fontFamily
+                                font.pixelSize: 13
+                                font.weight: Font.DemiBold
+                            }
+                        }
+
+                        GmlButton {
+                            width: 54
+                            height: 50
+                            radius: 25
+                            kind: "additional"
+                            iconSource: root.asset("refresh.svg")
+                            iconSize: 20
+                            onClicked: controller.refreshLogSize()
+                        }
+
+                        GmlButton {
+                            width: 116
+                            height: 50
+                            radius: 25
+                            kind: "danger"
+                            text: "Delete"
+                            enabled: !!root.logCleanup.hasLogs
+                            onClicked: controller.clearSelectedLogs()
                         }
                     }
                 }

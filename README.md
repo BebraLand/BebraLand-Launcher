@@ -95,7 +95,7 @@ PyInstaller builds for the OS and CPU it runs on. Build Windows on Windows, macO
 
 Windows 32-bit note: current PySide6 wheels in this project support Windows x64/ARM64, not win32. A single Windows x64 EXE will not run on 32-bit Windows, and building a 32-bit fallback would require changing the GUI stack or pinning old dependencies. For the launcher and modern modded Minecraft, Windows x64 is the practical target.
 
-## Build setup.exe
+## Build Windows installer
 
 Install [Inno Setup 6](https://jrsoftware.org/isinfo.php), then run:
 
@@ -103,7 +103,7 @@ Install [Inno Setup 6](https://jrsoftware.org/isinfo.php), then run:
 .\build_setup.bat
 ```
 
-Output: `dist\setup.exe`.
+Output: `dist\BebraLand-Launcher-Setup-<version>.exe`.
 
 The installer defaults to `%LOCALAPPDATA%\Programs\BebraLand Launcher`, lets the user choose another folder, installs `BebraLandLauncher.exe` and `BebraLandUpdater.exe`, creates Desktop and Start Menu shortcuts, and adds an uninstaller.
 

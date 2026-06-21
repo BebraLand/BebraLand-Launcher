@@ -143,7 +143,7 @@ jobs:
             --artifact "release/BebraLandLauncher-${BEBRALAND_RELEASE_PLATFORM}" \
             --output "release/latest-${BEBRALAND_RELEASE_PLATFORM}.json"
 
-      - name: Build Windows setup.exe
+      - name: Build Windows installer
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -152,8 +152,15 @@ jobs:
           if (-not (Test-Path -LiteralPath $isccPath)) {
             throw "ISCC.exe not found: $isccPath"
           }
+          $versionNumbers = [regex]::Matches($env:APP_VERSION, '\d+') |
+            Select-Object -First 4 |
+            ForEach-Object { [int]$_.Value }
+          while ($versionNumbers.Count -lt 4) {
+            $versionNumbers += 0
+          }
+          $env:BEBRALAND_WINDOWS_FILE_VERSION = $versionNumbers -join "."
           & $isccPath "installer\BebraLandLauncher.iss"
-          Copy-Item "dist\setup.exe" "release\setup-windows-x64.exe"
+          Copy-Item "dist\BebraLand-Launcher-Setup-$env:APP_VERSION.exe" "release\BebraLand-Launcher-Setup-$env:APP_VERSION-windows-x64.exe"
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4

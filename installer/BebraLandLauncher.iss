@@ -1,12 +1,17 @@
 #define MyAppName "BebraLand Launcher"
-#define MyAppPublisher "BebraLand"
+#define MyAppPublisher "BebraLand Team"
 #define MyAppExeName "BebraLandLauncher.exe"
 #define MyUpdaterExeName "BebraLandUpdater.exe"
+#define MyAppCopyright Chr(169) + " " + GetDateTimeString("yyyy", "", "") + " BebraLand Team"
 #define BuildVersion GetEnv("BEBRALAND_BUILD_VERSION")
+#define WindowsFileVersion GetEnv("BEBRALAND_WINDOWS_FILE_VERSION")
 #if BuildVersion == ""
 #define MyAppVersion "0.1.0"
 #else
 #define MyAppVersion BuildVersion
+#endif
+#if WindowsFileVersion == ""
+#define WindowsFileVersion "0.1.0.0"
 #endif
 
 [Setup]
@@ -20,13 +25,20 @@ DisableDirPage=no
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\dist
-OutputBaseFilename=setup
+OutputBaseFilename=BebraLand-Launcher-Setup-{#MyAppVersion}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
 SetupIconFile=..\resources\gml\Images\logo.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoDescription=BebraLand Launcher Setup
+VersionInfoTextVersion={#MyAppVersion}
+VersionInfoVersion={#WindowsFileVersion}
+VersionInfoProductName={#MyAppName}
+VersionInfoProductVersion={#MyAppVersion}
+VersionInfoCopyright={#MyAppCopyright}
 
 [Files]
 Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion

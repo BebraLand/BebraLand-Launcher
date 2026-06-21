@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date
 import os
 from pathlib import Path
+import re
 from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_INFO = ROOT / "src" / "bebraland_frontend" / "build_info.py"
 PYPROJECT = ROOT / "pyproject.toml"
+WINDOWS_VERSION_INFO_DIR = ROOT / "build"
 
 
 def load_dotenv() -> None:
@@ -55,6 +58,59 @@ def write_build_info(version: str, manifest_url: str, update_id: str, server_url
     )
 
 
+def windows_file_version(version: str) -> tuple[int, int, int, int]:
+    """Convert a display version to the four numeric fields Windows requires."""
+    numbers = [int(value) for value in re.findall(r"\d+", version)[:4]]
+    return tuple((numbers + [0, 0, 0, 0])[:4])  # type: ignore[return-value]
+
+
+def write_windows_version_info(version: str) -> None:
+    WINDOWS_VERSION_INFO_DIR.mkdir(parents=True, exist_ok=True)
+    numeric_version = windows_file_version(version)
+    file_version = ".".join(map(str, numeric_version))
+    copyright_year = str(date.today().year)
+
+    products = {
+        "launcher": ("BebraLand Launcher", "BebraLandLauncher.exe"),
+        "updater": ("BebraLand Launcher Updater", "BebraLandUpdater.exe"),
+    }
+    for resource_name, (description, original_filename) in products.items():
+        content = f'''# UTF-8
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers={numeric_version},
+    prodvers={numeric_version},
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0),
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        u'040904B0',
+        [
+          StringStruct(u'CompanyName', u'BebraLand Team'),
+          StringStruct(u'FileDescription', u'{description}'),
+          StringStruct(u'FileVersion', u'{file_version}'),
+          StringStruct(u'InternalName', u'{original_filename.removesuffix(".exe")}'),
+          StringStruct(u'LegalCopyright', u'© {copyright_year} BebraLand Team'),
+          StringStruct(u'OriginalFilename', u'{original_filename}'),
+          StringStruct(u'ProductName', u'BebraLand Launcher'),
+          StringStruct(u'ProductVersion', u'{version}'),
+        ]),
+    ]),
+    VarFileInfo([VarStruct(u'Translation', [1033, 1200])]),
+  ],
+)
+'''
+        (WINDOWS_VERSION_INFO_DIR / f"{resource_name}_version_info.txt").write_text(
+            content, encoding="utf-8"
+        )
+
+
 def validate_required_server_url(server_url: str) -> None:
     if not server_url:
         raise RuntimeError(
@@ -86,6 +142,7 @@ def main() -> None:
     if os.environ.get("BEBRALAND_REQUIRE_SERVER_URL", "").strip().lower() in {"1", "true", "yes"}:
         validate_required_server_url(server_url)
     write_build_info(version, manifest_url, update_id, server_url)
+    write_windows_version_info(version)
     print(
         f"Wrote {BUILD_INFO.relative_to(ROOT)}: "
         f"version={version}, update_id={update_id or '<none>'}, "

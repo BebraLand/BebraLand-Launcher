@@ -70,4 +70,5 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon='resources/gml/Images/logo.ico',
+    version='build/launcher_version_info.txt' if sys.platform.startswith('win') else None,
 )

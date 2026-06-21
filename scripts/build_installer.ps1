@@ -11,6 +11,14 @@ if (-not $env:BEBRALAND_BUILD_VERSION) {
     }
 }
 
+$versionNumbers = [regex]::Matches($env:BEBRALAND_BUILD_VERSION, '\d+') |
+    Select-Object -First 4 |
+    ForEach-Object { [int]$_.Value }
+while ($versionNumbers.Count -lt 4) {
+    $versionNumbers += 0
+}
+$env:BEBRALAND_WINDOWS_FILE_VERSION = $versionNumbers -join "."
+
 & (Join-Path $ProjectRoot "build_frontend.bat")
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
@@ -41,4 +49,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "Done: $ProjectRoot\dist\setup.exe"
+Write-Host "Done: $ProjectRoot\dist\BebraLand-Launcher-Setup-$env:BEBRALAND_BUILD_VERSION.exe"

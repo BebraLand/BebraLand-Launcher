@@ -2,7 +2,7 @@
 #define MyAppPublisher "BebraLand Team"
 #define MyAppExeName "BebraLandLauncher.exe"
 #define MyUpdaterExeName "BebraLandUpdater.exe"
-#define MyAppCopyright Chr(169) + " " + GetDateTimeString("yyyy", "", "") + " BebraLand Team"
+#define MyAppCopyright "(c) " + GetDateTimeString("yyyy", "", "") + " BebraLand Team"
 #define BuildVersion GetEnv("BEBRALAND_BUILD_VERSION")
 #define WindowsFileVersion GetEnv("BEBRALAND_WINDOWS_FILE_VERSION")
 #if BuildVersion == ""

@@ -49,4 +49,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "Done: $ProjectRoot\dist\BebraLand-Launcher-Setup-$env:BEBRALAND_BUILD_VERSION.exe"
+Write-Host "Done: $ProjectRoot\dist\BebraLand-Launcher-Setup.exe"

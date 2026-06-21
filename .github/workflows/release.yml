@@ -160,7 +160,7 @@ jobs:
           }
           $env:BEBRALAND_WINDOWS_FILE_VERSION = $versionNumbers -join "."
           & $isccPath "installer\BebraLandLauncher.iss"
-          Copy-Item "dist\BebraLand-Launcher-Setup-$env:APP_VERSION.exe" "release\BebraLand-Launcher-Setup-$env:APP_VERSION-windows-x64.exe"
+          Copy-Item "dist\BebraLand-Launcher-Setup.exe" "release\BebraLand-Launcher-Setup-windows-x64.exe"
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4

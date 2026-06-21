@@ -103,7 +103,7 @@ Install [Inno Setup 6](https://jrsoftware.org/isinfo.php), then run:
 .\build_setup.bat
 ```
 
-Output: `dist\BebraLand-Launcher-Setup-<version>.exe`.
+Output: `dist\BebraLand-Launcher-Setup.exe`.
 
 The installer defaults to `%LOCALAPPDATA%\Programs\BebraLand Launcher`, lets the user choose another folder, installs `BebraLandLauncher.exe` and `BebraLandUpdater.exe`, creates Desktop and Start Menu shortcuts, and adds an uninstaller.
 
@@ -172,10 +172,10 @@ GitHub Actions should:
 1. install uv-managed Python 3.13;
 2. build Windows x64, Linux x64, macOS arm64, and macOS x64 launchers;
 3. create one `latest.json` with `display_version`, `update_id`, compatibility `version`, and SHA256 for each platform launcher;
-4. build `setup-windows-x64.exe` for Windows;
+4. build `BebraLand-Launcher-Setup-windows-x64.exe` for Windows;
 5. publish all launchers, updaters, `latest.json`, and the Windows installer to GitHub Release.
 
-Players on Windows download `setup-windows-x64.exe` from the latest release. macOS/Linux players download their platform binary and keep the updater next to it. Future release builds auto-check:
+Players on Windows download `BebraLand-Launcher-Setup-windows-x64.exe` from the latest release. macOS/Linux players download their platform binary and keep the updater next to it. Future release builds auto-check:
 
 ```text
 https://github.com/<owner>/<repo>/releases/latest/download/latest.json

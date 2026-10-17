@@ -8,7 +8,7 @@ TextField {
 
     height: 50
     selectByMouse: true
-    focusPolicy: Qt.ClickFocus
+    focusPolicy: Qt.StrongFocus
     color: theme.content
     placeholderTextColor: "#606060"
     selectionColor: theme.primary

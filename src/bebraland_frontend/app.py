@@ -26,8 +26,8 @@ from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QVBoxLayout, QWidget
 
 from . import __version__
-from .api import ApiClient, WebSocketApiError, absolute_url
-from .config import DEFAULT_SERVER_URL, build_update_id, launcher_data_dir, platform_id, update_manifest_url
+from .api import ApiClient, WebSocketApiError, WebSocketClosed, absolute_url
+from .config import DEFAULT_SERVER_URL, build_update_id, launcher_data_dir, news_api_url, platform_id, site_url, update_manifest_url
 from .runtime import (
     delete_instance,
     install_mod_loader,
@@ -42,7 +42,7 @@ from .runtime import (
     sync_manifest,
 )
 from .settings import load_settings, save_settings
-from .theme import DEFAULT_BACKGROUND_PATH, GML_ASSETS_DIR, GML_IMAGES_DIR, NEWS_API_URL, register_fonts
+from .theme import DEFAULT_BACKGROUND_PATH, GML_ASSETS_DIR, GML_IMAGES_DIR, register_fonts
 from .updater import (
     can_self_replace,
     cleanup_update_cache,
@@ -147,6 +147,20 @@ def auth_error_message(exc: Exception) -> str:
             return "2FA code required"
         return message
     return str(exc)
+
+
+def login_error_message(exc: Exception) -> str:
+    if isinstance(exc, WebSocketApiError):
+        if exc.status_code >= 500:
+            return "Authentication server is unavailable. Please try again."
+        return auth_error_message(exc)
+    if isinstance(exc, ssl.SSLCertVerificationError):
+        return "Secure connection could not be verified. Please try again later."
+    if isinstance(exc, TimeoutError):
+        return "Server did not respond. Please try again."
+    if isinstance(exc, (OSError, WebSocketClosed)):
+        return "Connection interrupted. Please try again."
+    return "Login failed. Please try again."
 
 
 def detect_system_ram_mb() -> int | None:
@@ -259,16 +273,18 @@ def format_post_date(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
-    text = text.replace("T", " ")
-    if "+" in text:
-        head, tail = text.split("+", 1)
-        return f"{head} +{tail}"
-    return text
+    try:
+        published = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    return published.strftime("%d %b %Y")
 
 
 class Bridge(QObject):
     log = Signal(str)
     error = Signal(str)
+    login_failed = Signal(str)
+    site_url_changed = Signal(str)
     profiles = Signal(list)
     profiles_silent = Signal(list)
     auth = Signal(dict)
@@ -280,7 +296,7 @@ class Bridge(QObject):
     operation_finished = Signal()
     minecraft_started = Signal(object)
     minecraft_finished = Signal(object)
-    news = Signal(list)
+    news = Signal(str, list)
     skin_profile = Signal(dict)
     logged_out = Signal(str)
     saved_login_unverified = Signal(str)
@@ -325,6 +341,9 @@ class LauncherWindow(QWidget):
         self.progress_maximum = 100
         self.progress_visible = False
         self.login_status = ""
+        self.login_error = False
+        self._login_running = False
+        self._site_url = site_url()
         self.update_notice: dict[str, Any] = {"visible": False}
         self.two_factor_visible = False
         self._last_login_email = ""
@@ -345,6 +364,8 @@ class LauncherWindow(QWidget):
         self.bridge = Bridge()
         self.bridge.log.connect(self.log_line)
         self.bridge.error.connect(self.show_error)
+        self.bridge.login_failed.connect(self.handle_login_failed)
+        self.bridge.site_url_changed.connect(self.set_site_url)
         self.bridge.profiles.connect(self.set_profiles)
         self.bridge.profiles_silent.connect(self.set_profiles_silent)
         self.bridge.auth.connect(self.set_auth)
@@ -595,7 +616,10 @@ class LauncherWindow(QWidget):
             "logCleanup": self.log_cleanup_state(),
             "optionalMods": self.optional_mod_state(profile),
             "news": self.news,
+            "siteUrl": self._site_url,
             "loginStatus": self.login_status,
+            "loginError": self.login_error,
+            "loginBusy": self._login_running,
             "updateNotice": self.update_notice or {"visible": False},
             "twoFactorVisible": self.two_factor_visible,
             "accountName": self.current_username() or "Not logged in",
@@ -891,8 +915,29 @@ class LauncherWindow(QWidget):
         self.refresh_state()
 
     def configure_client_events(self) -> None:
-        self.client.set_event_handlers(profiles_changed=self.bridge.profiles.emit, log=self.bridge.log.emit)
+        self.client.set_event_handlers(
+            profiles_changed=self.bridge.profiles.emit,
+            log=self.bridge.log.emit,
+            site_url_changed=self.bridge.site_url_changed.emit,
+        )
         self.client.start_event_stream()
+
+    def set_site_url(self, value: str) -> None:
+        if (os.environ.get("AZURIOM_URL") or os.environ.get("BEBRALAND_SITE_URL", "")).strip():
+            return
+        value = value.strip().rstrip("/")
+        try:
+            parsed = urlsplit(value)
+        except ValueError:
+            return
+        if parsed.scheme not in {"https", "http"} or not parsed.hostname or parsed.username or parsed.password:
+            return
+        if value == self._site_url:
+            return
+        self._site_url = value
+        self.news = []
+        self.refresh_state()
+        self.fetch_news()
 
     def reset_client(self) -> None:
         server_url = str(self.settings.get("server_url") or DEFAULT_SERVER_URL).strip()
@@ -914,8 +959,16 @@ class LauncherWindow(QWidget):
         QMessageBox.critical(self, "BebraLand", text)
 
     def show_two_factor(self, message: str) -> None:
+        self._login_running = False
+        self.login_error = False
         self.two_factor_visible = True
         self.login_status = message or "2FA code required"
+        self.refresh_state()
+
+    def handle_login_failed(self, message: str) -> None:
+        self._login_running = False
+        self.login_error = True
+        self.login_status = message
         self.refresh_state()
 
     def set_progress(self, value: int, maximum: int, label: str) -> None:
@@ -1024,11 +1077,15 @@ class LauncherWindow(QWidget):
         self.update_notice = payload if isinstance(payload, dict) else {}
         self.refresh_state()
 
-    def set_news(self, posts: list[dict[str, Any]]) -> None:
+    def set_news(self, url: str, posts: list[dict[str, Any]]) -> None:
+        if url != news_api_url(self._site_url):
+            return
         self.news = posts
         self.refresh_state()
 
     def set_auth(self, payload: dict[str, Any]) -> None:
+        self._login_running = False
+        self.login_error = False
         self._auth_verify_pending = False
         self.auth_user = payload["user"]
         self.minecraft_profile = payload.get("minecraft_profile") or self.minecraft_profile
@@ -1101,8 +1158,12 @@ class LauncherWindow(QWidget):
         return manifest
 
     def fetch_news(self) -> None:
+        url = news_api_url(self._site_url)
+
         def task() -> None:
-            request = urllib.request.Request(NEWS_API_URL, headers={"Accept": "application/json"}, method="GET")
+            request = urllib.request.Request(
+                url, headers={"Accept": "application/json", "User-Agent": f"BebraLand Launcher/{__version__}"}, method="GET"
+            )
             with urllib.request.urlopen(request, timeout=20, context=https_context()) as response:
                 payload = json.loads(response.read().decode("utf-8"))
             posts = []
@@ -1119,7 +1180,7 @@ class LauncherWindow(QWidget):
                             "image": str(item.get("image") or ""),
                         }
                     )
-            self.bridge.news.emit(posts)
+            self.bridge.news.emit(url, posts)
 
         self.run_bg(task, popup=False)
 
@@ -1313,13 +1374,17 @@ class LauncherWindow(QWidget):
 
     @Slot(str, str, str)
     def login(self, email: str, password: str, code: str = "") -> None:
+        if self._login_running:
+            return
         email = email.strip()
         code = code.strip()
         if not email or not password:
+            self.login_error = True
             self.login_status = "Login and password required"
             self.refresh_state()
             return
         if self.two_factor_visible and not code:
+            self.login_error = True
             self.login_status = "Enter 2FA code"
             self.refresh_state()
             return
@@ -1336,7 +1401,9 @@ class LauncherWindow(QWidget):
                     self.bridge.log.emit(message)
                     self.bridge.two_factor.emit(message)
                     return
-                raise
+                self.bridge.log.emit(f"Login failed: {exc}")
+                self.bridge.login_failed.emit(login_error_message(exc))
+                return
             if payload.get("status") == "pending":
                 message = payload.get("message") or "2FA code required"
                 self.bridge.log.emit(message)
@@ -1345,6 +1412,8 @@ class LauncherWindow(QWidget):
             self.bridge.auth.emit(payload)
 
         self.login_status = "Logging in..."
+        self.login_error = False
+        self._login_running = True
         self.refresh_state()
         self.run_bg(task)
 

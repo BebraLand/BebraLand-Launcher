@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -14,7 +13,6 @@ DEFAULT_BACKGROUND_PATH = BUNDLED_ROOT / "background_for_launcher.jpg"
 GML_ASSETS_DIR = BUNDLED_ROOT / "resources" / "gml"
 GML_IMAGES_DIR = GML_ASSETS_DIR / "Images"
 GML_FONTS_DIR = GML_ASSETS_DIR / "Fonts"
-NEWS_API_URL = os.environ.get("BEBRALAND_NEWS_API_URL", "https://bebraland.auuruum.me/api/posts")
 
 
 def register_fonts(widget: QWidget) -> None:

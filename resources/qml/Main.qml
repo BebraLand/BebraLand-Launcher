@@ -60,6 +60,15 @@ Rectangle {
     }
 
     MouseArea {
+        id: backgroundPointer
+        objectName: "backgroundPointer"
+        anchors.fill: parent
+        acceptedButtons: Qt.NoButton
+        hoverEnabled: true
+        cursorShape: Qt.ArrowCursor
+    }
+
+    MouseArea {
         id: titleDragArea
         z: 20
         anchors.top: parent.top

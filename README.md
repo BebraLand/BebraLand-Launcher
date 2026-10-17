@@ -96,11 +96,27 @@ BEBRALAND_SERVER_URL=http://192.168.0.116:8765
 
 OS environment variables override `.env`.
 
+The backend's `.env` is the main place to configure the Azuriom address:
+
+```env
+AZURIOM_URL=https://bebraland.auuruum.dev
+```
+
+After restarting the backend and reconnecting the launcher, its WebSocket greeting supplies this
+address for news and the Website button. The backend uses the same setting for Azuriom auth,
+skins, and capes. No launcher rebuild is needed to pick up a domain change once both sides
+support this greeting. Older backends use the launcher's default website address.
+
+For development or an offline fallback in a build, set `AZURIOM_URL` in the launcher's
+`.env` too. A non-empty launcher environment override takes priority over the backend.
+
 ### Useful Environment Variables
 
 | Variable | Purpose |
 | --- | --- |
 | `BEBRALAND_SERVER_URL` | Backend server URL. |
+| `AZURIOM_URL` | Optional Azuriom base URL override; otherwise supplied by the backend. |
+| `BEBRALAND_NEWS_API_URL` | Optional full news endpoint override. |
 | `BEBRALAND_UPDATE_MANIFEST_URL` | Launcher update manifest URL. |
 | `BEBRALAND_LAUNCHER_DIR` | Override launcher data folder. |
 | `BEBRALAND_JAVA_PATH` / `BEBRALAND_JAVA_HOME` | Optional Java hint for admin/debug use. |
@@ -108,6 +124,8 @@ OS environment variables override `.env`.
 | `AUTHLIB_INJECTOR_JAR` | Force a local authlib-injector jar. |
 
 Release builds bake `BEBRALAND_SERVER_URL` from the GitHub Actions repository secret with the same name. The workflow should fail packaging if that value is empty, malformed, or points to localhost.
+
+The optional GitHub Actions repository variable `AZURIOM_URL` supplies a baked Azuriom URL fallback.
 
 ### Build Launcher
 

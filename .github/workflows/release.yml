@@ -79,6 +79,7 @@ jobs:
       BEBRALAND_COMPAT_VERSION: 9999.${{ github.run_number }}
       BEBRALAND_RELEASE_PLATFORM: ${{ matrix.platform }}
       BEBRALAND_SERVER_URL: ${{ secrets.BEBRALAND_SERVER_URL }}
+      AZURIOM_URL: ${{ vars.AZURIOM_URL }}
       BEBRALAND_REQUIRE_SERVER_URL: "1"
       BEBRALAND_UPDATE_MANIFEST_URL: https://github.com/${{ github.repository }}/releases/latest/download/latest.json
 

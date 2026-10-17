@@ -53,7 +53,21 @@ DEFAULT_UPDATE_MANIFEST_URL = (
     os.environ.get("BEBRALAND_UPDATE_MANIFEST_URL")
     or getattr(build_info, "UPDATE_MANIFEST_URL", "")
 ).strip()
+DEFAULT_SITE_URL = "https://bebraland.auuruum.dev"
 APP_DIR_NAME = "BebraLandLauncher"
+
+
+def site_url() -> str:
+    return (
+        os.environ.get("AZURIOM_URL")
+        or os.environ.get("BEBRALAND_SITE_URL")
+        or getattr(build_info, "SITE_URL", "")
+        or DEFAULT_SITE_URL
+    ).strip().rstrip("/")
+
+
+def news_api_url(website_url: str = "") -> str:
+    return (os.environ.get("BEBRALAND_NEWS_API_URL") or f"{website_url or site_url()}/api/posts").strip()
 
 
 def update_manifest_url() -> str:

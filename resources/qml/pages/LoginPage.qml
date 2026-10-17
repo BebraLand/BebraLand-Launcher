@@ -79,10 +79,10 @@ Item {
 
             Text {
                 width: parent.width
-                height: 18
+                height: Math.max(18, implicitHeight)
                 text: root.state.loginStatus || ""
-                color: text.toLowerCase().indexOf("error") >= 0 ? theme.danger : theme.content
-                elide: Text.ElideRight
+                color: root.state.loginError ? theme.danger : theme.content
+                wrapMode: Text.WordWrap
                 font.family: theme.fontFamily
                 font.pixelSize: 12
                 font.weight: Font.DemiBold
@@ -91,6 +91,7 @@ Item {
             GmlButton {
                 width: parent.width
                 kind: "primary"
+                enabled: !root.state.loginBusy
                 text: "Login to BebraLand"
                 iconSource: root.asset("login.svg")
                 iconSize: 24
@@ -134,8 +135,8 @@ Item {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WordWrap
-                    text: "Enter 2FA code from your Azuriom account."
-                    color: theme.content
+                    text: root.state.loginError ? root.state.loginStatus : "Enter 2FA code from your Azuriom account."
+                    color: root.state.loginError ? theme.danger : theme.content
                     lineHeight: 1.35
                     font.family: theme.fontFamily
                     font.pixelSize: 13
@@ -156,6 +157,7 @@ Item {
                 GmlButton {
                     width: parent.width
                     kind: "additional"
+                    enabled: !root.state.loginBusy
                     text: "Confirm"
                     iconSource: root.asset("password.svg")
                     iconSize: 22

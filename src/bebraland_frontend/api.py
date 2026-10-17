@@ -20,6 +20,7 @@ from .config import build_update_id, platform_id
 
 ProfilesCallback = Callable[[list[dict[str, Any]]], None]
 LogCallback = Callable[[str], None]
+SiteUrlCallback = Callable[[str], None]
 
 
 class WebSocketApiError(RuntimeError):
@@ -38,6 +39,7 @@ class WebSocketConnection:
         self.url = url
         self.timeout = timeout
         self._socket: socket.socket | ssl.SSLSocket | None = None
+        self._read_buffer = bytearray()
         self._write_lock = threading.Lock()
 
     def connect(self) -> None:
@@ -76,7 +78,8 @@ class WebSocketConnection:
                 raise WebSocketClosed("WebSocket handshake closed")
             response += chunk
 
-        header_text = response.split(b"\r\n\r\n", 1)[0].decode("iso-8859-1")
+        header_data, _, pending = response.partition(b"\r\n\r\n")
+        header_text = header_data.decode("iso-8859-1")
         lines = header_text.split("\r\n")
         if not lines or " 101 " not in lines[0]:
             raise WebSocketClosed(f"WebSocket handshake failed: {lines[0] if lines else header_text}")
@@ -92,6 +95,7 @@ class WebSocketConnection:
             raise WebSocketClosed("WebSocket handshake accept mismatch")
 
         sock.settimeout(None)
+        self._read_buffer = bytearray(pending)
         self._socket = sock
 
     def close(self) -> None:
@@ -185,7 +189,9 @@ class WebSocketConnection:
         sock = self._socket
         if not sock:
             raise WebSocketClosed("WebSocket is not connected")
-        data = b""
+        buffered = min(length, len(self._read_buffer))
+        data = bytes(self._read_buffer[:buffered])
+        del self._read_buffer[:buffered]
         while len(data) < length:
             chunk = sock.recv(length - len(data))
             if not chunk:
@@ -200,11 +206,13 @@ class ApiClient:
         self.token = token
         self.on_profiles_changed: ProfilesCallback | None = None
         self.on_log: LogCallback | None = None
+        self.on_site_url_changed: SiteUrlCallback | None = None
         self._ws: WebSocketConnection | None = None
         self._closed = False
         self._lock = threading.RLock()
         self._connect_lock = threading.Lock()
         self._responses: dict[str, dict[str, Any]] = {}
+        self._pending_requests: set[str] = set()
         self._reader_thread: threading.Thread | None = None
         self._response_ready = threading.Condition(self._lock)
 
@@ -217,9 +225,11 @@ class ApiClient:
         self,
         profiles_changed: ProfilesCallback | None = None,
         log: LogCallback | None = None,
+        site_url_changed: SiteUrlCallback | None = None,
     ) -> None:
         self.on_profiles_changed = profiles_changed
         self.on_log = log
+        self.on_site_url_changed = site_url_changed
 
     def start_event_stream(self) -> None:
         threading.Thread(target=self._connect_for_events, daemon=True).start()
@@ -340,9 +350,14 @@ class ApiClient:
             self._drop_connection(ws, str(exc))
 
     def _handle_message(self, message: dict[str, Any]) -> None:
+        if message.get("type") == "hello" and isinstance(message.get("site_url"), str):
+            if self.on_site_url_changed:
+                self.on_site_url_changed(message["site_url"])
         message_id = message.get("id")
         if message.get("type") == "response" and message_id:
             with self._response_ready:
+                if str(message_id) not in self._pending_requests:
+                    return
                 self._responses[str(message_id)] = message
                 self._response_ready.notify_all()
             return
@@ -362,29 +377,37 @@ class ApiClient:
 
         last_error: Exception | None = None
         for attempt in range(2):
+            ws = None
             try:
                 self._ensure_connected()
                 with self._lock:
                     ws = self._ws
                 if not ws:
                     raise WebSocketClosed("WebSocket is not connected")
+                with self._response_ready:
+                    self._pending_requests.add(request_id)
                 ws.send_json(message)
-                return self._wait_response(request_id, timeout)
+                return self._wait_response(request_id, timeout, ws)
+            except TimeoutError:
+                # A slow response must not disconnect other requests on this socket.
+                raise
             except (OSError, WebSocketClosed) as exc:
                 last_error = exc
-                with self._lock:
-                    ws = self._ws
                 if ws:
                     self._drop_connection(ws, str(exc))
                 if attempt == 0:
                     continue
+            finally:
+                with self._response_ready:
+                    self._pending_requests.discard(request_id)
+                    self._responses.pop(request_id, None)
         raise WebSocketClosed(str(last_error) if last_error else "WebSocket request failed")
 
-    def _wait_response(self, request_id: str, timeout: float) -> dict[str, Any]:
+    def _wait_response(self, request_id: str, timeout: float, ws: WebSocketConnection) -> dict[str, Any]:
         deadline = time.monotonic() + timeout
         with self._response_ready:
             while request_id not in self._responses:
-                if self._ws is None:
+                if self._ws is not ws:
                     raise WebSocketClosed("WebSocket disconnected")
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -401,12 +424,13 @@ class ApiClient:
 
     def _drop_connection(self, ws: WebSocketConnection, reason: str) -> None:
         with self._response_ready:
-            if self._ws is ws:
+            was_current = self._ws is ws
+            if was_current:
                 self._ws = None
                 self._responses.clear()
                 self._response_ready.notify_all()
         ws.close()
-        if not self._closed:
+        if was_current and not self._closed:
             self._log(f"WebSocket disconnected: {reason}")
 
     def _log(self, text: str) -> None:

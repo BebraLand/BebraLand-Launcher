@@ -344,14 +344,18 @@ Item {
             }
         }
 
-        Column {
+        Item {
             id: newsBlock
             width: Math.min(440, Math.max(320, content.width * 0.45))
             anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 12
+            anchors.top: parent.top
+            anchors.topMargin: 34
+            anchors.bottom: websiteButton.top
+            anchors.bottomMargin: 18
 
             Text {
+                id: newsHeading
+                objectName: "newsHeading"
                 text: "News"
                 color: theme.headline
                 font.family: theme.fontFamily
@@ -359,18 +363,44 @@ Item {
                 font.weight: Font.Bold
             }
 
-            Repeater {
+            ListView {
+                id: newsList
+                objectName: "newsList"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: newsHeading.bottom
+                anchors.topMargin: 14
+                anchors.bottom: parent.bottom
+                clip: true
+                spacing: 12
+                boundsBehavior: Flickable.StopAtBounds
+                interactive: contentHeight > height
                 model: root.news
+
+                ScrollBar.vertical: ScrollBar {
+                    id: newsScroll
+                    policy: ScrollBar.AsNeeded
+                    width: 4
+                    padding: 0
+
+                    contentItem: Rectangle {
+                        implicitWidth: 4
+                        radius: 2
+                        color: newsScroll.hovered || newsScroll.pressed ? theme.content : theme.formBorderHover
+                    }
+                }
 
                 delegate: Rectangle {
                     id: newsCard
+                    objectName: "newsCard"
+                    required property var modelData
 
-                    width: newsBlock.width
-                    height: 134
-                    radius: 20
-                    color: theme.frame
+                    width: newsList.width - (newsList.contentHeight > newsList.height ? 12 : 0)
+                    height: newsContent.implicitHeight + 32
+                    radius: 18
+                    color: newsMouse.active ? theme.formHover : theme.frame
                     border.width: 1
-                    border.color: "#00000000"
+                    border.color: newsMouse.active ? theme.formBorderHover : theme.frameBorder
 
                     function roundedContains(x, y, width, height, radius) {
                         if (x < 0 || y < 0 || x > width || y > height)
@@ -385,37 +415,52 @@ Item {
                     }
 
                     Column {
-                        anchors.fill: parent
-                        anchors.margins: 22
-                        spacing: 9
+                        id: newsContent
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: 16
+                        spacing: 6
 
                         Text {
+                            objectName: "newsTitle"
                             width: parent.width
-                            text: modelData.title || "News"
+                            text: newsCard.modelData.title || "News"
+                            textFormat: Text.PlainText
                             color: theme.headline
+                            wrapMode: Text.WordWrap
+                            maximumLineCount: 2
                             elide: Text.ElideRight
                             font.family: theme.fontFamily
-                            font.pixelSize: 22
-                            font.weight: Font.Black
+                            font.pixelSize: 18
+                            font.weight: Font.Bold
                         }
 
                         Text {
+                            objectName: "newsDescription"
                             width: parent.width
-                            text: modelData.description || ""
+                            visible: text !== ""
+                            text: newsCard.modelData.description || ""
+                            textFormat: Text.PlainText
                             color: theme.content
+                            wrapMode: Text.WordWrap
+                            maximumLineCount: 2
                             elide: Text.ElideRight
+                            lineHeight: 1.15
                             font.family: theme.fontFamily
-                            font.pixelSize: 14
+                            font.pixelSize: 13
                             font.weight: Font.Medium
                         }
 
                         Text {
                             width: parent.width
-                            text: modelData.date || ""
-                            color: "#C8D0D4"
+                            visible: text !== ""
+                            text: newsCard.modelData.date || ""
+                            textFormat: Text.PlainText
+                            color: theme.content
                             elide: Text.ElideRight
                             font.family: theme.fontFamily
-                            font.pixelSize: 12
+                            font.pixelSize: 11
                             font.weight: Font.Medium
                         }
                     }
@@ -426,18 +471,31 @@ Item {
                         hoverEnabled: true
                         cursorShape: active ? Qt.PointingHandCursor : Qt.ArrowCursor
 
-                        readonly property bool active: !!modelData.url && containsMouse && newsCard.roundedContains(mouseX, mouseY, newsCard.width, newsCard.height, newsCard.radius)
+                        readonly property bool active: !!newsCard.modelData.url && containsMouse && newsCard.roundedContains(mouseX, mouseY, newsCard.width, newsCard.height, newsCard.radius)
 
                         onClicked: (mouse) => {
-                            if (modelData.url && newsCard.roundedContains(mouse.x, mouse.y, newsCard.width, newsCard.height, newsCard.radius))
-                                controller.openUrl(modelData.url)
+                            if (newsCard.modelData.url && newsCard.roundedContains(mouse.x, mouse.y, newsCard.width, newsCard.height, newsCard.radius))
+                                controller.openUrl(newsCard.modelData.url)
                         }
                     }
                 }
             }
+
+            Text {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: newsList.top
+                visible: root.news.length === 0
+                text: "No news available"
+                color: theme.content
+                font.family: theme.fontFamily
+                font.pixelSize: 14
+            }
         }
 
         GmlButton {
+            id: websiteButton
+            objectName: "websiteButton"
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             width: 138
@@ -445,7 +503,7 @@ Item {
             text: "Website"
             iconSource: root.asset("app.svg")
             iconSize: 22
-            onClicked: controller.openUrl("https://bebraland.auuruum.me")
+            onClicked: controller.openUrl(root.state.siteUrl)
         }
     }
 }

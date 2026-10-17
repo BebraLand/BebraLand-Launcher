@@ -43,7 +43,7 @@ def read_project_version() -> str:
     raise RuntimeError("No [project].version found in pyproject.toml")
 
 
-def write_build_info(version: str, manifest_url: str, update_id: str, server_url: str) -> None:
+def write_build_info(version: str, manifest_url: str, update_id: str, server_url: str, site_url: str = "") -> None:
     BUILD_INFO.write_text(
         "\n".join(
             [
@@ -51,6 +51,7 @@ def write_build_info(version: str, manifest_url: str, update_id: str, server_url
                 f'UPDATE_ID = "{update_id}"',
                 f'UPDATE_MANIFEST_URL = "{manifest_url}"',
                 f'SERVER_URL = "{server_url}"',
+                f'SITE_URL = {site_url!r}',
                 "",
             ]
         ),
@@ -133,6 +134,10 @@ def main() -> None:
     parser.add_argument("--update-id", default=os.environ.get("BEBRALAND_UPDATE_ID", ""))
     parser.add_argument("--manifest-url", default=os.environ.get("BEBRALAND_UPDATE_MANIFEST_URL", ""))
     parser.add_argument("--server-url", default=os.environ.get("BEBRALAND_SERVER_URL", ""))
+    parser.add_argument(
+        "--azuriom-url", "--site-url", dest="site_url",
+        default=os.environ.get("AZURIOM_URL") or os.environ.get("BEBRALAND_SITE_URL", ""),
+    )
     args = parser.parse_args()
 
     version = (args.version or read_project_version()).strip().lstrip("vV")
@@ -141,7 +146,7 @@ def main() -> None:
     server_url = args.server_url.strip()
     if os.environ.get("BEBRALAND_REQUIRE_SERVER_URL", "").strip().lower() in {"1", "true", "yes"}:
         validate_required_server_url(server_url)
-    write_build_info(version, manifest_url, update_id, server_url)
+    write_build_info(version, manifest_url, update_id, server_url, args.site_url.strip().rstrip("/"))
     write_windows_version_info(version)
     print(
         f"Wrote {BUILD_INFO.relative_to(ROOT)}: "

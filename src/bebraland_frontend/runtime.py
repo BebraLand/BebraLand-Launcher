@@ -26,6 +26,8 @@ Status = Callable[[str], None]
 Progress = Callable[[int, int, str], None]
 CancelCheck = Callable[[], bool]
 PROGRESS_SCALE = 10_000
+DOWNLOAD_ATTEMPTS = 3
+DOWNLOAD_RETRY_DELAY_SECONDS = 2.0
 SYSTEM_PROTECTED_LOCAL_PATTERNS = [
     ".bebraland/**",
     "assets/**",
@@ -828,6 +830,20 @@ def prepare_reinstall(
     return game_dir
 
 
+def is_retryable_download_error(exc: requests.RequestException) -> bool:
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        return exc.response.status_code >= 500 or exc.response.status_code == 429
+    return True
+
+
+def wait_before_retry(seconds: float, cancelled: CancelCheck | None) -> None:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        check_cancel(cancelled)
+        time.sleep(0.1)
+    check_cancel(cancelled)
+
+
 def download_file(
     url: str,
     dest: Path,
@@ -838,6 +854,30 @@ def download_file(
     progress_label: str | None = None,
     progress_key: str | None = None,
     cancelled: CancelCheck | None = None,
+) -> None:
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+        try:
+            download_file_once(
+                url, dest, expected_sha256, status, progress, progress_tracker, progress_label, progress_key, cancelled
+            )
+            return
+        except requests.RequestException as exc:
+            if attempt == DOWNLOAD_ATTEMPTS or not is_retryable_download_error(exc):
+                raise
+            status(f"Retry {dest.name} ({attempt}/{DOWNLOAD_ATTEMPTS - 1}) after network error: {exc}")
+            wait_before_retry(DOWNLOAD_RETRY_DELAY_SECONDS * attempt, cancelled)
+
+
+def download_file_once(
+    url: str,
+    dest: Path,
+    expected_sha256: str,
+    status: Status,
+    progress: Progress | None,
+    progress_tracker: ByteProgressTracker | None,
+    progress_label: str | None,
+    progress_key: str | None,
+    cancelled: CancelCheck | None,
 ) -> None:
     tmp = dest.with_suffix(dest.suffix + ".part")
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -863,7 +903,7 @@ def download_file(
                         elif progress and total:
                             detail = f"{label} - {format_bytes(done)} / {format_bytes(total)}"
                             progress(done, total, detail)
-        except OperationCancelled:
+        except BaseException:
             tmp.unlink(missing_ok=True)
             raise
     check_cancel(cancelled)
@@ -940,11 +980,15 @@ def sync_manifest(
 
     total_download_bytes = sum(int(item.get("size") or 0) for _, item, _, _ in downloads)
     download_progress = ByteProgressTracker(total_download_bytes)
+    sync_failed = threading.Event()
+
+    def sync_cancelled() -> bool:
+        return sync_failed.is_set() or bool(cancelled and cancelled())
     if downloads:
         download_progress.emit(progress, 0, total_download_bytes, "Download pack files")
 
     def fetch_pack_file(download: tuple[str, dict[str, Any], Path, str]) -> tuple[str, str]:
-        check_cancel(cancelled)
+        check_cancel(sync_cancelled)
         rel, item, target, stat_key = download
         url = absolute_url(server_url, item["url"])
         download_file(
@@ -956,7 +1000,7 @@ def sync_manifest(
             progress_tracker=download_progress,
             progress_label=f"Download {rel}",
             progress_key=rel,
-            cancelled=cancelled,
+            cancelled=sync_cancelled,
         )
         return rel, stat_key
 
@@ -968,9 +1012,16 @@ def sync_manifest(
         status(f"Download pack files with {worker_count} workers")
         with ThreadPoolExecutor(max_workers=worker_count) as executor:
             futures = [executor.submit(fetch_pack_file, download) for download in downloads]
-            for future in as_completed(futures):
-                _, stat_key = future.result()
-                stats[stat_key] += 1
+            try:
+                for future in as_completed(futures):
+                    _, stat_key = future.result()
+                    stats[stat_key] += 1
+            except BaseException:
+                # Stop the other workers now instead of letting them finish their files before the error surfaces.
+                sync_failed.set()
+                for future in futures:
+                    future.cancel()
+                raise
 
     check_cancel(cancelled)
     stats["removed"] = cleanup_extra_files(game_dir, set(wanted), rules, status, disabled_optional)

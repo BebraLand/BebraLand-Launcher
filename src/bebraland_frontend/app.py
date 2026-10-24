@@ -7,6 +7,7 @@ import hashlib
 import html
 import json
 import os
+import queue
 import re
 import shutil
 import ssl
@@ -92,12 +93,40 @@ def launcher_log_path() -> Path:
     return launcher_data_dir() / "logs" / f"launcher-{stamp}.log"
 
 
-def append_log(path: Path, text: str) -> None:
-    stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{stamp}] {text}", flush=True)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(f"[{stamp}] {text}\n")
+class BackgroundLog:
+    """Writes log lines on a worker thread so a slow disk, antivirus scan or paused console never stalls the UI."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._lines: queue.SimpleQueue[str | None] = queue.SimpleQueue()
+        self._thread = threading.Thread(target=self._run, name="launcher-log", daemon=True)
+        self._thread.start()
+
+    def write(self, text: str) -> None:
+        stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self._lines.put(f"[{stamp}] {text}")
+
+    def close(self, timeout: float = 2.0) -> None:
+        self._lines.put(None)
+        self._thread.join(timeout)
+
+    def _run(self) -> None:
+        handle = None
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            handle = self.path.open("a", encoding="utf-8")
+        except OSError as exc:
+            print(f"Launcher log unavailable: {exc}", flush=True)
+        try:
+            while (line := self._lines.get()) is not None:
+                print(line, flush=True)
+                if handle:
+                    handle.write(line + "\n")
+                    if self._lines.empty():
+                        handle.flush()
+        finally:
+            if handle:
+                handle.close()
 
 
 def https_context() -> ssl.SSLContext:
@@ -357,7 +386,7 @@ class LauncherWindow(QWidget):
         self._pack_operation_running = False
         self._cancel_event: threading.Event | None = None
         self._minecraft_process: Any | None = None
-        self._log_path = launcher_log_path()
+        self._log = BackgroundLog(launcher_log_path())
         self._log_cleanup_cache: dict[str, dict[str, Any]] = {}
         self._state: dict[str, Any] = {}
         self._progress: dict[str, Any] = {}
@@ -366,7 +395,7 @@ class LauncherWindow(QWidget):
         self._progress_refresh_timer.setSingleShot(True)
         self._progress_refresh_timer.setInterval(PROGRESS_REFRESH_INTERVAL_MS)
         self._progress_refresh_timer.timeout.connect(self.refresh_progress)
-        append_log(self._log_path, f"BebraLand Launcher {__version__} started")
+        self._log.write(f"BebraLand Launcher {__version__} started")
 
         self.apply_install_root()
         self.bridge = Bridge()
@@ -974,7 +1003,7 @@ class LauncherWindow(QWidget):
         save_settings(self.settings)
 
     def log_line(self, text: str) -> None:
-        append_log(self._log_path, text)
+        self._log.write(text)
         self.status_text = text
         self.schedule_progress_refresh()
 
@@ -1732,6 +1761,7 @@ class LauncherWindow(QWidget):
 
     def closeEvent(self, event: Any) -> None:
         self.client.close()
+        self._log.close()
         super().closeEvent(event)
 
 

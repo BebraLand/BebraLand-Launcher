@@ -13,6 +13,7 @@ Rectangle {
     color: theme.background
 
     property var s: controller.state || ({})
+    property var p: controller.progress || ({})
     property string currentPage: ""
 
     Theme { id: theme }
@@ -35,6 +36,9 @@ Rectangle {
         function onStateChanged() {
             root.s = controller.state || ({})
             root.syncPage()
+        }
+        function onProgressChanged() {
+            root.p = controller.progress || ({})
         }
     }
 
@@ -185,7 +189,7 @@ Rectangle {
 
     Rectangle {
         z: 30
-        visible: root.s.progressVisible
+        visible: root.p.progressVisible
         anchors.top: parent.top
         anchors.topMargin: 18
         anchors.horizontalCenter: parent.horizontalCenter
@@ -203,8 +207,8 @@ Rectangle {
             anchors.top: parent.top
             anchors.topMargin: 10
             anchors.leftMargin: 18
-            anchors.rightMargin: root.s.canCancelDownload ? 96 : 18
-            text: root.s.progressTitle || root.s.progressText || root.s.status || ""
+            anchors.rightMargin: root.p.canCancelDownload ? 96 : 18
+            text: root.p.progressTitle || root.p.progressText || root.p.status || ""
             color: theme.headline
             elide: Text.ElideRight
             font.family: theme.fontFamily
@@ -214,7 +218,7 @@ Rectangle {
 
         Rectangle {
             id: progressCancel
-            visible: root.s.canCancelDownload
+            visible: root.p.canCancelDownload
             anchors.top: parent.top
             anchors.right: parent.right
             anchors.topMargin: 8
@@ -257,7 +261,7 @@ Rectangle {
             Text {
                 width: parent.width - progressSpeed.width - progressEta.width - parent.spacing * 2
                 height: parent.height
-                text: root.s.progressAmount || root.s.progressDetails || ""
+                text: root.p.progressAmount || root.p.progressDetails || ""
                 color: theme.content
                 elide: Text.ElideRight
                 font.family: theme.fontFamily
@@ -269,7 +273,7 @@ Rectangle {
                 id: progressSpeed
                 width: 76
                 height: parent.height
-                text: root.s.progressSpeed || ""
+                text: root.p.progressSpeed || ""
                 color: theme.content
                 horizontalAlignment: Text.AlignRight
                 elide: Text.ElideRight
@@ -282,7 +286,7 @@ Rectangle {
                 id: progressEta
                 width: 86
                 height: parent.height
-                text: root.s.progressEta || ""
+                text: root.p.progressEta || ""
                 color: theme.content
                 horizontalAlignment: Text.AlignRight
                 elide: Text.ElideRight
@@ -307,7 +311,7 @@ Rectangle {
                 height: parent.height
                 radius: parent.radius
                 color: theme.primary
-                width: parent.width * Math.max(0, Math.min(1, (root.s.progressValue || 0) / Math.max(1, root.s.progressMaximum || 1)))
+                width: parent.width * Math.max(0, Math.min(1, (root.p.progressValue || 0) / Math.max(1, root.p.progressMaximum || 1)))
             }
         }
     }

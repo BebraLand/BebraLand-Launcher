@@ -29,6 +29,10 @@ class Controller(QObject):
     def state(self):
         return self.data
 
+    @Property("QVariant", constant=True)
+    def progress(self):
+        return {"progressVisible": False, "status": "Ready"}
+
     @Slot(str)
     def openUrl(self, url):
         self.urls.append(url)
@@ -56,9 +60,9 @@ class HomeUiTests(unittest.TestCase):
             "defaultBackgroundUrl": "", "profiles": [profile], "selectedProfile": profile,
             "selectedSlug": "test", "hasSelectedProfile": True, "optionalMods": [],
             "playDisabled": False, "minecraftRunning": False, "operationRunning": False,
-            "offlineMode": False, "progressVisible": False, "updateNotice": {"visible": False},
+            "offlineMode": False, "updateNotice": {"visible": False},
             "news": self.posts, "siteUrl": "https://example.invalid", "skinBodyUrl": "",
-            "accountName": "Test", "status": "Ready",
+            "accountName": "Test",
         })
         self.view = QQuickWidget()
         register_fonts(self.view)

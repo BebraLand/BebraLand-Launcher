@@ -62,7 +62,7 @@ DEFAULT_WINDOW_WIDTH = 900
 DEFAULT_WINDOW_HEIGHT = 600
 MAX_SKIN_RENDER_BYTES = 5 * 1024 * 1024
 WINDOW_RESIZE_MARGIN = 8
-STATE_REFRESH_INTERVAL_MS = 100
+PROGRESS_REFRESH_INTERVAL_MS = 100
 GWL_STYLE = -16
 SWP_NOMOVE = 0x0002
 SWP_NOSIZE = 0x0001
@@ -307,6 +307,7 @@ class Bridge(QObject):
 
 class LauncherWindow(QWidget):
     stateChanged = Signal()
+    progressChanged = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -359,11 +360,12 @@ class LauncherWindow(QWidget):
         self._log_path = launcher_log_path()
         self._log_cleanup_cache: dict[str, dict[str, Any]] = {}
         self._state: dict[str, Any] = {}
+        self._progress: dict[str, Any] = {}
         # Worker threads report progress per download chunk; coalesce those into one QML refresh per interval.
-        self._state_refresh_timer = QTimer(self)
-        self._state_refresh_timer.setSingleShot(True)
-        self._state_refresh_timer.setInterval(STATE_REFRESH_INTERVAL_MS)
-        self._state_refresh_timer.timeout.connect(self.refresh_state)
+        self._progress_refresh_timer = QTimer(self)
+        self._progress_refresh_timer.setSingleShot(True)
+        self._progress_refresh_timer.setInterval(PROGRESS_REFRESH_INTERVAL_MS)
+        self._progress_refresh_timer.timeout.connect(self.refresh_progress)
         append_log(self._log_path, f"BebraLand Launcher {__version__} started")
 
         self.apply_install_root()
@@ -402,6 +404,11 @@ class LauncherWindow(QWidget):
     @Property("QVariant", notify=stateChanged)
     def state(self) -> dict[str, Any]:
         return self._state
+
+    # Kept apart from state so frequent progress updates don't rebuild profile, news and mod lists in QML.
+    @Property("QVariant", notify=progressChanged)
+    def progress(self) -> dict[str, Any]:
+        return self._progress
 
     def build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -583,12 +590,28 @@ class LauncherWindow(QWidget):
             self._log_cleanup_cache[cache_key] = state
         return state
 
-    def schedule_state_refresh(self) -> None:
-        if not self._state_refresh_timer.isActive():
-            self._state_refresh_timer.start()
+    def schedule_progress_refresh(self) -> None:
+        if not self._progress_refresh_timer.isActive():
+            self._progress_refresh_timer.start()
+
+    def refresh_progress(self) -> None:
+        self._progress_refresh_timer.stop()
+        self._progress = {
+            "status": self.status_text,
+            "progressText": self.progress_text,
+            "progressTitle": self.progress_title,
+            "progressDetails": self.progress_details,
+            "progressAmount": self.progress_amount,
+            "progressSpeed": self.progress_speed,
+            "progressEta": self.progress_eta,
+            "progressValue": self.progress_value,
+            "progressMaximum": self.progress_maximum,
+            "progressVisible": self.progress_visible,
+            "canCancelDownload": self._cancel_event is not None and not self._cancel_event.is_set(),
+        }
+        self.progressChanged.emit()
 
     def refresh_state(self) -> None:
-        self._state_refresh_timer.stop()
         profile = self.selected_profile()
         authenticated = bool(self.client.token and self.auth_user)
         bootstrapping = self._auth_verify_pending or (authenticated and not self._profiles_loaded)
@@ -600,21 +623,10 @@ class LauncherWindow(QWidget):
             "offlineMode": self._offline_mode,
             "bootstrapping": bootstrapping,
             "version": __version__,
-            "status": self.status_text,
-            "progressText": self.progress_text,
-            "progressTitle": self.progress_title,
-            "progressDetails": self.progress_details,
-            "progressAmount": self.progress_amount,
-            "progressSpeed": self.progress_speed,
-            "progressEta": self.progress_eta,
-            "progressValue": self.progress_value,
-            "progressMaximum": self.progress_maximum,
-            "progressVisible": self.progress_visible,
             "operationRunning": self._pack_operation_running,
             "minecraftRunning": minecraft_running,
             "hasSelectedProfile": has_selected_profile,
             "playDisabled": not has_selected_profile or not launch_allowed or self._pack_operation_running or minecraft_running,
-            "canCancelDownload": self._cancel_event is not None and not self._cancel_event.is_set(),
             "defaultBackgroundUrl": file_url(DEFAULT_BACKGROUND_PATH),
             "assetsUrl": file_url(GML_ASSETS_DIR),
             "profiles": [self.public_profile(profile_item) for profile_item in self.profiles],
@@ -637,6 +649,7 @@ class LauncherWindow(QWidget):
             "skinBodyUrl": self.skin_body_url(),
         }
         self.stateChanged.emit()
+        self.refresh_progress()
 
     def minecraft_running(self) -> bool:
         process = self._minecraft_process
@@ -963,7 +976,7 @@ class LauncherWindow(QWidget):
     def log_line(self, text: str) -> None:
         append_log(self._log_path, text)
         self.status_text = text
-        self.schedule_state_refresh()
+        self.schedule_progress_refresh()
 
     def show_error(self, text: str) -> None:
         self.log_line(f"Error: {text}")
@@ -995,7 +1008,7 @@ class LauncherWindow(QWidget):
         self.progress_speed = detail_parts[1] if len(detail_parts) > 1 else ""
         self.progress_eta = detail_parts[2] if len(detail_parts) > 2 else ""
         self.status_text = self.progress_title or self.status_text
-        self.schedule_state_refresh()
+        self.schedule_progress_refresh()
 
     def clear_progress(self) -> None:
         self.progress_visible = False
@@ -1007,7 +1020,7 @@ class LauncherWindow(QWidget):
         self.progress_amount = ""
         self.progress_speed = ""
         self.progress_eta = ""
-        self.refresh_state()
+        self.refresh_progress()
 
     def set_profiles(self, profiles: list[dict[str, Any]]) -> None:
         self.apply_profiles(profiles, update_status=True)

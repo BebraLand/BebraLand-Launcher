@@ -63,6 +63,7 @@ SHARED_MINECRAFT_DIR_NAME = ".shared"
 AUTHLIB_ARTIFACT_URL = "https://authlib-injector.yushi.moe/artifact/latest.json"
 DISABLED_ENV_VALUES = {"0", "false", "no", "off", "disabled"}
 _instances_root_override: Path | None = None
+_download_sessions = threading.local()
 
 
 class OperationCancelled(RuntimeError):
@@ -871,6 +872,15 @@ def is_retryable_download_error(exc: requests.RequestException) -> bool:
     return True
 
 
+def download_session() -> requests.Session:
+    # One keep-alive session per download thread, so a pack of many small mods doesn't pay a TLS handshake per file.
+    session = getattr(_download_sessions, "session", None)
+    if session is None:
+        session = requests.Session()
+        _download_sessions.session = session
+    return session
+
+
 def wait_before_retry(seconds: float, cancelled: CancelCheck | None) -> None:
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
@@ -920,7 +930,7 @@ def download_file_once(
     if not progress_tracker or not progress:
         status(label)
     check_cancel(cancelled)
-    with requests.get(url, stream=True, timeout=60) as response:
+    with download_session().get(url, stream=True, timeout=60) as response:
         response.raise_for_status()
         total = int(response.headers.get("content-length") or 0)
         done = 0

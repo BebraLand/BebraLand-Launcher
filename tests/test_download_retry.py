@@ -1,5 +1,7 @@
 import hashlib
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Callable, Iterator
@@ -50,7 +52,7 @@ def test_download_retries_after_network_error() -> None:
                 raise result
             return result
 
-        with patch.object(runtime.requests, "get", side_effect=fake_get) as get:
+        with patch.object(runtime.requests.Session, "get", side_effect=fake_get) as get:
             download_file("https://example/a.jar", dest, PAYLOAD_SHA256, lambda _: None)
 
         assert get.call_count == 2
@@ -62,7 +64,7 @@ def test_download_does_not_retry_client_errors() -> None:
         dest = Path(tmp) / "mods" / "a.jar"
         missing = FakeResponse(lambda: iter([]), status_code=404)
 
-        with patch.object(runtime.requests, "get", return_value=missing) as get:
+        with patch.object(runtime.requests.Session, "get", return_value=missing) as get:
             with pytest.raises(requests.HTTPError):
                 download_file("https://example/a.jar", dest, PAYLOAD_SHA256, lambda _: None)
 
@@ -93,7 +95,7 @@ def test_sync_stops_other_downloads_after_failure() -> None:
         set_instances_root(tmp)
         try:
             started = time.monotonic()
-            with patch.object(runtime.requests, "get", side_effect=fake_get):
+            with patch.object(runtime.requests.Session, "get", side_effect=fake_get):
                 with pytest.raises(requests.HTTPError):
                     sync_manifest(manifest, "https://example", lambda _: None)
             elapsed = time.monotonic() - started
@@ -102,3 +104,33 @@ def test_sync_stops_other_downloads_after_failure() -> None:
 
         assert elapsed < 3
         assert not (Path(tmp) / "pack" / "mods" / "slow.jar.part").exists()
+
+
+def test_downloads_on_one_thread_reuse_a_connection() -> None:
+    client_ports: set[int] = set()
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self) -> None:
+            client_ports.add(self.client_address[1])
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(PAYLOAD)))
+            self.end_headers()
+            self.wfile.write(PAYLOAD)
+
+        def log_message(self, *args: Any) -> None:
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        with TemporaryDirectory() as tmp:
+            for index in range(10):
+                url = f"http://127.0.0.1:{server.server_port}/mods/{index}.jar"
+                download_file(url, Path(tmp) / f"{index}.jar", PAYLOAD_SHA256, lambda _: None)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert len(client_ports) == 1

@@ -32,7 +32,7 @@ class FakeResponse:
 
 
 def sync(fake_get: Any) -> None:
-    with patch.object(runtime.requests, "get", side_effect=fake_get):
+    with patch.object(runtime.requests.Session, "get", side_effect=fake_get):
         sync_manifest(MANIFEST, "https://example", lambda _: None)
 
 

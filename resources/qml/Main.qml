@@ -14,6 +14,7 @@ Rectangle {
 
     property var s: controller.state || ({})
     property var p: controller.progress || ({})
+    readonly property bool updateDownloading: !!s.updateNotice && s.updateNotice.visible === true && s.updateNotice.phase === "downloading"
     property string currentPage: ""
 
     Theme { id: theme }
@@ -189,7 +190,7 @@ Rectangle {
 
     Rectangle {
         z: 30
-        visible: root.p.progressVisible
+        visible: root.p.progressVisible && !root.updateDownloading
         anchors.top: parent.top
         anchors.topMargin: 18
         anchors.horizontalCenter: parent.horizontalCenter
@@ -331,7 +332,7 @@ Rectangle {
             anchors.top: parent.top
             anchors.topMargin: 76
             width: Math.min(470, parent.width - 180)
-            height: 134
+            height: root.updateDownloading ? 150 : 134
             radius: 18
             color: "#F0111111"
             border.color: theme.frameBorder
@@ -386,7 +387,9 @@ Rectangle {
 
                     Text {
                         width: parent.width
-                        text: root.s.updateNotice ? (root.s.updateNotice.status || "") : ""
+                        text: root.updateDownloading && root.p.progressVisible && root.p.progressDetails
+                              ? "Downloading update... " + root.p.progressDetails
+                              : (root.s.updateNotice ? (root.s.updateNotice.status || "") : "")
                         color: theme.headline
                         elide: Text.ElideRight
                         font.family: theme.fontFamily
@@ -402,6 +405,21 @@ Rectangle {
                         font.family: theme.fontFamily
                         font.pixelSize: 11
                         font.weight: Font.Medium
+                    }
+
+                    Rectangle {
+                        visible: root.updateDownloading && root.p.progressVisible === true
+                        width: parent.width
+                        height: 6
+                        radius: 3
+                        color: theme.formBorder
+
+                        Rectangle {
+                            height: parent.height
+                            radius: parent.radius
+                            color: theme.primary
+                            width: parent.width * Math.max(0, Math.min(1, (root.p.progressValue || 0) / Math.max(1, root.p.progressMaximum || 1)))
+                        }
                     }
                 }
             }

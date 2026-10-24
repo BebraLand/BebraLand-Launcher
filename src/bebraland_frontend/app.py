@@ -1694,7 +1694,13 @@ class LauncherWindow(QWidget):
                     "phase": "downloading",
                 }
             )
-            downloaded = download_release(release, self.bridge.log.emit)
+            try:
+                downloaded = download_release(release, self.bridge.log.emit, self.bridge.progress.emit)
+            except Exception:
+                self.bridge.update_notice.emit({"visible": False})
+                raise
+            finally:
+                self.bridge.progress_done.emit()
             if can_self_replace():
                 self.bridge.update_notice.emit(
                     {

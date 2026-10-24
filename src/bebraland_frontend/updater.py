@@ -17,11 +17,14 @@ from .config import launcher_binary_name, launcher_data_dir, platform_id, update
 
 
 Status = Callable[[str], None]
+Progress = Callable[[int, int, str], None]
 UPDATE_HELPER_FLAG = "--apply-update"
 INSTALLED_UPDATER_FLAG = "--install-update"
 UPDATER_EXE_NAME = updater_binary_name()
 UPDATE_WAIT_SECONDS = 60
 UPDATE_REPLACE_RETRY_SECONDS = 30
+UPDATE_DOWNLOAD_ATTEMPTS = 3
+UPDATE_RETRY_DELAY_SECONDS = 2.0
 
 
 def numeric_version(value: str) -> tuple[int, ...]:
@@ -182,7 +185,13 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def download_release(release: dict[str, Any], status: Status) -> Path:
+def is_retryable_download_error(exc: requests.RequestException) -> bool:
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        return exc.response.status_code >= 500 or exc.response.status_code == 429
+    return True
+
+
+def download_release(release: dict[str, Any], status: Status, progress: Progress | None = None) -> Path:
     cleanup_update_cache()
     updates_dir = launcher_data_dir() / "updates"
     updates_dir.mkdir(parents=True, exist_ok=True)
@@ -192,17 +201,17 @@ def download_release(release: dict[str, Any], status: Status) -> Path:
         filename = f"{base.stem}-{release['version']}-{release.get('platform') or platform_id()}{base.suffix}"
     target = updates_dir / filename
     tmp = target.with_suffix(target.suffix + ".part")
-    status(f"Download launcher {display_version(release)}")
-    try:
-        with requests.get(release["url"], stream=True, timeout=120) as response:
-            response.raise_for_status()
-            with tmp.open("wb") as handle:
-                for chunk in response.iter_content(chunk_size=1024 * 512):
-                    if chunk:
-                        handle.write(chunk)
-    except Exception:
-        tmp.unlink(missing_ok=True)
-        raise
+    label = f"Download launcher {display_version(release)}"
+    status(label)
+    for attempt in range(1, UPDATE_DOWNLOAD_ATTEMPTS + 1):
+        try:
+            download_release_file(str(release["url"]), tmp, label, progress)
+            break
+        except requests.RequestException as exc:
+            if attempt == UPDATE_DOWNLOAD_ATTEMPTS or not is_retryable_download_error(exc):
+                raise
+            status(f"Retry launcher download ({attempt}/{UPDATE_DOWNLOAD_ATTEMPTS - 1}) after network error: {exc}")
+            time.sleep(UPDATE_RETRY_DELAY_SECONDS * attempt)
     expected = release.get("sha256")
     if expected:
         actual = sha256_file(tmp)
@@ -213,6 +222,28 @@ def download_release(release: dict[str, Any], status: Status) -> Path:
         tmp.chmod(tmp.stat().st_mode | 0o755)
     tmp.replace(target)
     return target
+
+
+def download_release_file(url: str, tmp: Path, label: str, progress: Progress | None) -> None:
+    try:
+        with requests.get(url, stream=True, timeout=120) as response:
+            response.raise_for_status()
+            total = int(response.headers.get("content-length") or 0)
+            done = 0
+            with tmp.open("wb") as handle:
+                for chunk in response.iter_content(chunk_size=1024 * 512):
+                    if chunk:
+                        handle.write(chunk)
+                        done += len(chunk)
+                        if progress and total:
+                            progress(done, total, f"{label} - {format_megabytes(done)} / {format_megabytes(total)}")
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def format_megabytes(value: int) -> str:
+    return f"{value / (1024 * 1024):.1f} MB"
 
 
 def cleanup_update_cache(status: Status | None = None) -> None:

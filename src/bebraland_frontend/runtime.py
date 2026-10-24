@@ -20,6 +20,7 @@ import requests
 
 from .api import absolute_url
 from .config import launcher_data_dir
+from .updater import is_retryable_download_error
 
 
 Status = Callable[[str], None]
@@ -864,12 +865,6 @@ def prepare_reinstall(
     removed += remove_local_path(manifest_path)
     status(f"Reinstall cleanup done: removed={removed}")
     return game_dir
-
-
-def is_retryable_download_error(exc: requests.RequestException) -> bool:
-    if isinstance(exc, requests.HTTPError) and exc.response is not None:
-        return exc.response.status_code >= 500 or exc.response.status_code == 429
-    return True
 
 
 def download_session() -> requests.Session:

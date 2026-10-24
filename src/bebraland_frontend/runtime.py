@@ -727,6 +727,41 @@ def write_cleanup_ledger(game_dir: Path, ledger: dict[str, Any]) -> None:
     cleanup_ledger_path(game_dir).write_text(json.dumps(ledger, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def file_hash_cache_path(game_dir: Path) -> Path:
+    return state_dir(game_dir) / "file_hashes.json"
+
+
+def read_file_hash_cache(game_dir: Path) -> dict[str, Any]:
+    path = file_hash_cache_path(game_dir)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def write_file_hash_cache(game_dir: Path, cache: dict[str, Any]) -> None:
+    file_hash_cache_path(game_dir).write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+
+
+def remember_file_hash(cache: dict[str, Any], rel: str, path: Path, sha256: str) -> None:
+    stat = path.stat()
+    cache[rel] = {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns, "sha256": sha256}
+
+
+def cached_sha256_file(cache: dict[str, Any], rel: str, path: Path) -> str:
+    # Re-hash only files whose size or mtime changed since the last sync; full reads of big packs made every launch slow.
+    stat = path.stat()
+    entry = cache.get(rel)
+    if isinstance(entry, dict) and entry.get("size") == stat.st_size and entry.get("mtime_ns") == stat.st_mtime_ns:
+        return str(entry.get("sha256") or "")
+    sha256 = sha256_file(path)
+    remember_file_hash(cache, rel, path, sha256)
+    return sha256
+
+
 def is_cleanup_protected(path: str) -> bool:
     return matches_any(path, SYSTEM_PROTECTED_LOCAL_PATTERNS)
 
@@ -961,6 +996,8 @@ def sync_manifest(
     rules = manifest.get("rules") or {}
     stats = {"checked": len(wanted), "downloaded": 0, "updated": 0, "seeded": 0, "kept": 0, "removed": 0}
     downloads: list[tuple[str, dict[str, Any], Path, str]] = []
+    old_hash_cache = read_file_hash_cache(game_dir)
+    hash_cache: dict[str, Any] = {}
 
     for rel, item in wanted.items():
         target = local_instance_path(game_dir, rel)
@@ -969,7 +1006,8 @@ def sync_manifest(
             if mode == "seed":
                 stats["kept"] += 1
                 continue
-            if sha256_file(target) == item["sha256"]:
+            if cached_sha256_file(old_hash_cache, rel, target) == item["sha256"]:
+                hash_cache[rel] = old_hash_cache[rel]
                 continue
             downloads.append((rel, item, target, "updated"))
             continue
@@ -1004,24 +1042,29 @@ def sync_manifest(
         )
         return rel, stat_key
 
-    if len(downloads) == 1:
-        _, stat_key = fetch_pack_file(downloads[0])
+    def record_download(rel: str, stat_key: str) -> None:
         stats[stat_key] += 1
-    elif downloads:
-        worker_count = min(8, len(downloads))
-        status(f"Download pack files with {worker_count} workers")
-        with ThreadPoolExecutor(max_workers=worker_count) as executor:
-            futures = [executor.submit(fetch_pack_file, download) for download in downloads]
-            try:
-                for future in as_completed(futures):
-                    _, stat_key = future.result()
-                    stats[stat_key] += 1
-            except BaseException:
-                # Stop the other workers now instead of letting them finish their files before the error surfaces.
-                sync_failed.set()
-                for future in futures:
-                    future.cancel()
-                raise
+        remember_file_hash(hash_cache, rel, local_instance_path(game_dir, rel), wanted[rel]["sha256"])
+
+    try:
+        if len(downloads) == 1:
+            record_download(*fetch_pack_file(downloads[0]))
+        elif downloads:
+            worker_count = min(8, len(downloads))
+            status(f"Download pack files with {worker_count} workers")
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                futures = [executor.submit(fetch_pack_file, download) for download in downloads]
+                try:
+                    for future in as_completed(futures):
+                        record_download(*future.result())
+                except BaseException:
+                    # Stop the other workers now instead of letting them finish their files before the error surfaces.
+                    sync_failed.set()
+                    for future in futures:
+                        future.cancel()
+                    raise
+    finally:
+        write_file_hash_cache(game_dir, hash_cache)
 
     check_cancel(cancelled)
     stats["removed"] = cleanup_extra_files(game_dir, set(wanted), rules, status, disabled_optional)

@@ -134,3 +134,17 @@ def test_downloads_on_one_thread_reuse_a_connection() -> None:
         server.server_close()
 
     assert len(client_ports) == 1
+
+
+def test_download_verifies_hash_without_rereading_file() -> None:
+    with TemporaryDirectory() as tmp, patch.object(runtime, "sha256_file", side_effect=AssertionError("re-read")):
+        good = Path(tmp) / "good.jar"
+        bad = Path(tmp) / "bad.jar"
+        with patch.object(runtime.requests.Session, "get", side_effect=lambda *args, **kwargs: ok_response()):
+            download_file("https://example/good.jar", good, PAYLOAD_SHA256, lambda _: None)
+            with pytest.raises(ValueError, match="Hash mismatch"):
+                download_file("https://example/bad.jar", bad, "0" * 64, lambda _: None)
+
+        assert good.read_bytes() == PAYLOAD
+        assert not bad.exists()
+        assert not bad.with_suffix(".jar.part").exists()

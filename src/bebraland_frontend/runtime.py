@@ -934,6 +934,7 @@ def download_file_once(
         response.raise_for_status()
         total = int(response.headers.get("content-length") or 0)
         done = 0
+        digest = hashlib.sha256()
         if progress_tracker:
             progress_tracker.emit(progress, done, total, label, progress_key)
         try:
@@ -942,6 +943,7 @@ def download_file_once(
                     check_cancel(cancelled)
                     if chunk:
                         handle.write(chunk)
+                        digest.update(chunk)
                         done += len(chunk)
                         if progress_tracker:
                             progress_tracker.emit(progress, done, total, label, progress_key)
@@ -952,7 +954,7 @@ def download_file_once(
             tmp.unlink(missing_ok=True)
             raise
     check_cancel(cancelled)
-    actual = sha256_file(tmp)
+    actual = digest.hexdigest()
     if actual != expected_sha256:
         tmp.unlink(missing_ok=True)
         raise ValueError(f"Hash mismatch for {dest}: {actual} != {expected_sha256}")

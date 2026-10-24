@@ -38,16 +38,32 @@ Rectangle {
         }
     }
 
+    // Keeps the last loaded background on screen while the next one decodes off the UI thread.
     Image {
+        anchors.fill: parent
+        visible: background.status !== Image.Ready
+        source: background.readySource
+        fillMode: Image.PreserveAspectCrop
+        cache: true
+        smooth: true
+        mipmap: true
+    }
+
+    Image {
+        id: background
+
+        property url readySource: ""
+
         anchors.fill: parent
         source: !root.s.bootstrapping && root.currentPage === "home" && root.s.selectedProfile && root.s.selectedProfile.background_url
                 ? root.s.selectedProfile.background_url
                 : root.s.defaultBackgroundUrl
         fillMode: Image.PreserveAspectCrop
-        asynchronous: false
+        asynchronous: true
         cache: true
         smooth: true
         mipmap: true
+        onStatusChanged: if (status === Image.Ready) readySource = source
     }
 
     Rectangle {

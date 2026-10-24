@@ -238,8 +238,12 @@ class CountingRaw:
 
 @contextmanager
 def track_streamed_request_bytes(on_bytes: Callable[[int], None]) -> Iterator[None]:
+    # Count only this install's traffic: requests.get calls from the installing thread, and sessions that
+    # minecraft_launcher_lib opens with requests.session() and downloads through from its worker threads.
+    # Other threads (launcher self-update, pack sync sessions) keep their requests untouched.
     original_get = requests.get
-    original_session_get = requests.sessions.Session.get
+    original_session_factory = requests.session
+    owner_thread = threading.get_ident()
 
     def wrap_response(response: requests.Response) -> requests.Response:
         raw = getattr(response, "raw", None)
@@ -249,19 +253,28 @@ def track_streamed_request_bytes(on_bytes: Callable[[int], None]) -> Iterator[No
 
     def tracked_get(*args: Any, **kwargs: Any) -> requests.Response:
         response = original_get(*args, **kwargs)
-        return wrap_response(response) if kwargs.get("stream") else response
+        if kwargs.get("stream") and threading.get_ident() == owner_thread:
+            return wrap_response(response)
+        return response
 
-    def tracked_session_get(session: requests.sessions.Session, *args: Any, **kwargs: Any) -> requests.Response:
-        response = original_session_get(session, *args, **kwargs)
-        return wrap_response(response) if kwargs.get("stream") else response
+    def tracked_session() -> requests.Session:
+        session = original_session_factory()
+        session_get = session.get
+
+        def get(*args: Any, **kwargs: Any) -> requests.Response:
+            response = session_get(*args, **kwargs)
+            return wrap_response(response) if kwargs.get("stream") else response
+
+        session.get = get  # type: ignore[method-assign]
+        return session
 
     requests.get = tracked_get
-    requests.sessions.Session.get = tracked_session_get
+    requests.session = tracked_session
     try:
         yield
     finally:
         requests.get = original_get
-        requests.sessions.Session.get = original_session_get
+        requests.session = original_session_factory
 
 
 class MinecraftInstallProgress:

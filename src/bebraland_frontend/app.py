@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 
 import certifi
 
-from PySide6.QtCore import QLockFile, QPoint, Property, QObject, QRect, Qt, QUrl, Signal, Slot
+from PySide6.QtCore import QLockFile, QPoint, Property, QObject, QRect, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QCursor, QDesktopServices, QIcon
 from PySide6.QtQuickWidgets import QQuickWidget
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QVBoxLayout, QWidget
@@ -62,6 +62,7 @@ DEFAULT_WINDOW_WIDTH = 900
 DEFAULT_WINDOW_HEIGHT = 600
 MAX_SKIN_RENDER_BYTES = 5 * 1024 * 1024
 WINDOW_RESIZE_MARGIN = 8
+STATE_REFRESH_INTERVAL_MS = 100
 GWL_STYLE = -16
 SWP_NOMOVE = 0x0002
 SWP_NOSIZE = 0x0001
@@ -358,6 +359,11 @@ class LauncherWindow(QWidget):
         self._log_path = launcher_log_path()
         self._log_cleanup_cache: dict[str, dict[str, Any]] = {}
         self._state: dict[str, Any] = {}
+        # Worker threads report progress per download chunk; coalesce those into one QML refresh per interval.
+        self._state_refresh_timer = QTimer(self)
+        self._state_refresh_timer.setSingleShot(True)
+        self._state_refresh_timer.setInterval(STATE_REFRESH_INTERVAL_MS)
+        self._state_refresh_timer.timeout.connect(self.refresh_state)
         append_log(self._log_path, f"BebraLand Launcher {__version__} started")
 
         self.apply_install_root()
@@ -577,7 +583,12 @@ class LauncherWindow(QWidget):
             self._log_cleanup_cache[cache_key] = state
         return state
 
+    def schedule_state_refresh(self) -> None:
+        if not self._state_refresh_timer.isActive():
+            self._state_refresh_timer.start()
+
     def refresh_state(self) -> None:
+        self._state_refresh_timer.stop()
         profile = self.selected_profile()
         authenticated = bool(self.client.token and self.auth_user)
         bootstrapping = self._auth_verify_pending or (authenticated and not self._profiles_loaded)
@@ -952,7 +963,7 @@ class LauncherWindow(QWidget):
     def log_line(self, text: str) -> None:
         append_log(self._log_path, text)
         self.status_text = text
-        self.refresh_state()
+        self.schedule_state_refresh()
 
     def show_error(self, text: str) -> None:
         self.log_line(f"Error: {text}")
@@ -984,7 +995,7 @@ class LauncherWindow(QWidget):
         self.progress_speed = detail_parts[1] if len(detail_parts) > 1 else ""
         self.progress_eta = detail_parts[2] if len(detail_parts) > 2 else ""
         self.status_text = self.progress_title or self.status_text
-        self.refresh_state()
+        self.schedule_state_refresh()
 
     def clear_progress(self) -> None:
         self.progress_visible = False
